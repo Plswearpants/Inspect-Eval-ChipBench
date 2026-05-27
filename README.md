@@ -32,27 +32,33 @@ This template contains:
    uv sync
 
    # Run an evaluation
-   uv run inspect eval <eval_name>/<task_name> --model openai/gpt-4o
+   uv run inspect eval src/<eval_name>/<task_file>.py@<task_name>
 
    # Run tests
-   uv run pytest
+   uv run pytest -k "not agentic"
 
    # Run linters
-   uv run ruff check && uv run ruff format --check && uv run mypy .
+   uv run ruff check && uv run ruff format --check && uv run mypy src tests
    ```
 
 ## Quickstart
 
 1. Fork and clone (see above), then `uv sync`
-2. Copy an example: `cp -r src/examples/simple_qa src/my_eval`
-3. Register it in `pyproject.toml`:
+2. Copy an example: `cp -r src/examples/simple_qa src/<eval_name>`
+3. Rename the module file, `@task` function, and `__init__.py` import to
+   match your package (replace `simple_qa` / `examples.simple_qa.simple_qa`
+   references with your own names).
+4. In `pyproject.toml`, set the distribution name and add an entry point:
 
    ```toml
+   [project]
+   name = "<eval_name>"
+
    [project.entry-points.inspect_ai]
-   my_eval = "my_eval"
+   <eval_name> = "<eval_name>"
    ```
 
-4. Run it: `uv run inspect eval my_eval/my_task --model openai/gpt-5-nano`
+5. Run it: `uv run inspect eval <eval_name>/<task_name> --model openai/gpt-5-nano` # note: the task_name is saved in src/eval_dir/task_file, if the project name != eval_dir  `uv run inspect eval task_name` will work instead
 
 See `src/examples/` for complete working examples, including a real
 benchmark adaptation (GPQA).
