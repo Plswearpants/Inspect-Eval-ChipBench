@@ -1,0 +1,26 @@
+title: "ChipBench: A Next-Step Benchmark for Evaluating LLM Performance in AI-Aided Chip Design"
+description: |
+  Evaluates LLM capability in AI-aided chip design across three tasks:
+  Verilog generation from specification, Verilog debugging (fixing injected
+  arithmetic/assignment/timing/state-machine bugs, zero-shot or one-shot with
+  waveform data), and cross-language reference model generation (producing
+  functional Python or CXXRTL models of a Verilog module; SystemC is part of
+  the original paper's benchmark but is not scored here since the vendored
+  verification toolbox has no working SystemC path).
+  Scoring runs generated code through Icarus Verilog simulation (generation,
+  debugging) or a Verilator-based cross-language differential test (reference
+  model generation) against a golden reference implementation.
+arxiv: https://arxiv.org/abs/2601.21448
+group: Coding
+contributors: ["Plswearpants"]
+version: "1-A"
+tasks:
+  - name: chipbench_verilog_gen
+    dataset_samples: 45
+  - name: chipbench_debug
+    dataset_samples: 178
+  - name: chipbench_refmodel
+    dataset_samples: 90
+metadata:
+  sandbox: ["scorer"]
+  requires_internet: false

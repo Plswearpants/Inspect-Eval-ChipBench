@@ -10,14 +10,24 @@ fallback_version = "0.0.0+unknown"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["examples*", "utils*"]
+include = ["examples*", "utils*", "chipbench*"]
 
 [tool.setuptools.package-data]
 "*" = ["eval.yaml"]
+"chipbench" = [
+    "data/**/*.txt",
+    "data/**/*.sv",
+    "Dockerfile",
+    "compose.yaml",
+    "Tool_Box/**/*.py",
+    "Tool_Box/**/*.md",
+]
 
 [tool.ruff]
 extend-exclude = [
     "agent_artefacts",
+    "ToImplement",
+    "src/chipbench/Tool_Box",  # vendored third-party code, kept as-is for easy upstream diffing
 ]
 src = ["src"]
 target-version = "py311"
@@ -83,6 +93,8 @@ markers = [
 exclude = [
     "build",
     "agent_artefacts",
+    "ToImplement",
+    "src/chipbench/Tool_Box",  # vendored third-party code, invoked as a subprocess, never imported
 ]
 warn_unused_ignores = true
 no_implicit_reexport = true
@@ -151,6 +163,7 @@ dependencies = [
 # should export your @task functions.
 # Note: examples are NOT registered -- only your evaluations under src/.
 [project.entry-points.inspect_ai]
+chipbench = "chipbench"
 
 [dependency-groups]
 dev = [

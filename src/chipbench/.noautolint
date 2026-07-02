@@ -1,0 +1,15 @@
+# tests/chipbench intentionally has no __init__.py. Since chipbench is a
+# top-level src/ package (not nested, e.g. under examples/), an __init__.py
+# in tests/chipbench would make mypy see two distinct modules both named
+# "chipbench" (src/chipbench and tests/chipbench) and fail with
+# "Duplicate module named chipbench". tests/examples has the same
+# no-__init__.py shape for the same reason. pytest test discovery does not
+# require __init__.py.
+tests_init
+
+# `utils` (src/utils) is a first-party sibling package shared across evals
+# in this template (see src/examples/gpqa.py for the same import pattern),
+# not a pip dependency — there is no PyPI package to add under
+# optional-dependencies. The autolint dependency check only recognizes
+# modules local to the eval's own directory, so it flags this as external.
+external_dependencies
