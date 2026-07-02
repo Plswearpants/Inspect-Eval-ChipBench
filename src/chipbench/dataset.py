@@ -7,7 +7,7 @@ triplet on disk; ``ref.sv`` declares ``module RefModule(...)`` and the model
 is asked to produce a matching ``module TopModule(...)``.
 
 The Ref Model Gen task's dataset is not read from the vendored
-``Ref Model Gen/`` folder — that folder is a separate training-data-generation
+``ref_model_gen/`` folder — that folder is a separate training-data-generation
 tool built on an unrelated corpus, not the paper's 44x3 benchmark. Instead we
 construct the samples ourselves by pairing each Verilog Gen problem's own
 spec with the vendored ``gen_{python,cxxrtl}_prompt.txt`` templates (see

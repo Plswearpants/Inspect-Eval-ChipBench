@@ -99,7 +99,7 @@ licensed), not re-hosted on HuggingFace.
   prompt (no simulation is run to produce it — it's baked into the vendored
   data); `zero_shot` omits it.
 - **Reference Model Generation** (90 = 45 problems x 2 languages): **not**
-  read from the vendored `Ref Model Gen/` folder, which is a separate
+  read from the vendored `ref_model_gen/` folder, which is a separate
   training-data-generation tool built on an unrelated corpus, not the
   paper's benchmark. Instead, each Verilog Gen problem's own spec is paired
   with the vendored `gen_{python,cxxrtl}_prompt.txt` system-prompt template
