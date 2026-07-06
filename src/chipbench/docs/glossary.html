@@ -1,0 +1,447 @@
+<title>ChipBench Glossary — Terms Not Obvious From Their Names</title>
+
+<style>
+  :root {
+    --bg: #f7f8f6;
+    --bg-raised: #ffffff;
+    --ink: #182220;
+    --ink-soft: #4b5a56;
+    --caption: #6d7d78;
+    --accent: #0f8f6f;
+    --accent-soft: #dbf0e8;
+    --rule: #dbe3df;
+    --rule-strong: #b9c6c1;
+    --mono: "SF Mono", ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+    --serif: Charter, "Iowan Old Style", Georgia, "Times New Roman", serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1513;
+      --bg-raised: #131c1a;
+      --ink: #dde6e3;
+      --ink-soft: #9db0aa;
+      --caption: #7c8d87;
+      --accent: #5ee6c0;
+      --accent-soft: #16332a;
+      --rule: #22302c;
+      --rule-strong: #2e3f3a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1513;
+    --bg-raised: #131c1a;
+    --ink: #dde6e3;
+    --ink-soft: #9db0aa;
+    --caption: #7c8d87;
+    --accent: #5ee6c0;
+    --accent-soft: #16332a;
+    --rule: #22302c;
+    --rule-strong: #2e3f3a;
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f8f6;
+    --bg-raised: #ffffff;
+    --ink: #182220;
+    --ink-soft: #4b5a56;
+    --caption: #6d7d78;
+    --accent: #0f8f6f;
+    --accent-soft: #dbf0e8;
+    --rule: #dbe3df;
+    --rule-strong: #b9c6c1;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 4.5rem 1.75rem 6rem;
+  }
+
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    margin-bottom: 3rem;
+    padding-bottom: 2.25rem;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: clamp(1.6rem, 4vw, 2.15rem);
+    margin: 0;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  .dek {
+    font-family: var(--serif);
+    font-size: 1.05rem;
+    color: var(--ink-soft);
+    max-width: 58ch;
+    text-wrap: balance;
+  }
+
+  nav.jump {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  nav.jump a {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    text-decoration: none;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--rule-strong);
+    border-radius: 3px;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+
+  nav.jump a:hover,
+  nav.jump a:focus-visible {
+    border-color: var(--accent);
+    color: var(--ink);
+    background: var(--accent-soft);
+  }
+
+  nav.jump a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  section.group {
+    margin-bottom: 3.25rem;
+    scroll-margin-top: 1.5rem;
+  }
+
+  .group-label {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .group-label .num {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--caption);
+  }
+
+  .group-label h2 {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0;
+    flex: 1;
+  }
+
+  .group-label::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+    align-self: center;
+  }
+
+  dl.terms {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.35rem;
+  }
+
+  .entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+    padding-left: 1rem;
+    border-left: 2px solid var(--rule-strong);
+  }
+
+  .entry dt {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--accent);
+  }
+
+  .entry dt .also {
+    font-weight: 400;
+    color: var(--caption);
+    font-size: 0.85rem;
+  }
+
+  .entry dd {
+    margin: 0;
+    color: var(--ink);
+    font-size: 1rem;
+    max-width: 62ch;
+  }
+
+  .entry dd code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--accent-soft);
+    color: var(--ink);
+    padding: 0.05em 0.35em;
+    border-radius: 3px;
+  }
+
+  .entry dd .context {
+    display: block;
+    margin-top: 0.4rem;
+    color: var(--caption);
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 0.92rem;
+  }
+
+  footer.note {
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--caption);
+  }
+
+  @media (max-width: 520px) {
+    .page { padding: 3rem 1.25rem 4rem; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <span class="eyebrow">ChipBench · reference</span>
+    <h1>Glossary</h1>
+    <p class="dek">Terms from the Verilog/hardware side and the Inspect eval side that came up while building the ChipBench evaluation — collected here because they weren't obvious from their names.</p>
+    <nav class="jump" aria-label="Jump to section">
+      <a href="#signals">Signals &amp; Verilog</a>
+      <a href="#verification">Verification</a>
+      <a href="#toolchain">Toolchain</a>
+      <a href="#inspect">Inspect / Eval</a>
+    </nav>
+  </header>
+
+  <section class="group" id="signals">
+    <div class="group-label"><span class="num">01</span><h2>Signals &amp; Verilog Basics</h2></div>
+    <dl class="terms">
+
+      <div class="entry">
+        <dt>clk</dt>
+        <dd>The clock signal — a wire that alternates 0/1 on a steady beat. Every synchronous piece of logic in the design "moves" only at the moment this signal ticks; nothing updates between ticks.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>rst_n</dt>
+        <dd>Reset, active-<em>low</em>. The trailing <code>_n</code> is a naming convention meaning "this signal does its job when it's 0, not when it's 1" — so <code>rst_n</code> holds the circuit in reset while low, and normal operation only begins once it's pulled high.
+          <span class="context">The plain name <code>reset</code> (no <code>_n</code>) would instead mean active-high — the convention is what tells you which polarity to expect.</span>
+        </dd>
+      </div>
+
+      <div class="entry">
+        <dt>posedge / negedge</dt>
+        <dd>Short for positive edge / negative edge — the exact instant a signal flips 0→1 (posedge) or 1→0 (negedge). Logic described as "<code>always @(posedge clk)</code>" only reacts at that single instant per clock cycle, not continuously.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>port <span class="also">(input / output)</span></dt>
+        <dd>The named wires a module exposes to the outside world — its interface. A module's ports are the only way anything outside it can read or write its signals, the same role a function's parameters and return value play in software.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>reg / wire / logic</dt>
+        <dd><code>wire</code> is a plain connection with no memory — it just reflects whatever drives it, instantly. <code>reg</code> can hold a value between clock edges (despite the name, it doesn't always synthesize to a physical register). <code>logic</code> is SystemVerilog's newer, unified type that replaces both and avoids picking wrong.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>always block</dt>
+        <dd>A block of code describing what happens when a specific event occurs — most commonly <code>always @(posedge clk)</code>, meaning "run this logic once per clock tick." It looks like a loop but isn't one; it's re-triggered by the event, not iterated.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>assign</dt>
+        <dd>A continuous, always-active connection: <code>assign y = a &amp; b;</code> means <code>y</code> is permanently wired to follow <code>a &amp; b</code>, recalculated instantly any time either changes — unlike an <code>always</code> block, which only updates on its triggering event.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>8'b0111_0001</dt>
+        <dd>Verilog's bit-width literal notation: <code>8</code> is the number of bits, <code>b</code> means the digits that follow are binary (<code>d</code> = decimal, <code>h</code> = hex), and underscores are just visual spacers with no meaning — so this is an 8-bit binary value.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>X <span class="also">(unknown state)</span></dt>
+        <dd>A special value Verilog signals can hold meaning "not yet determined" — typically before anything has driven them, e.g. immediately at power-on before reset has run. It's neither 0 nor 1; comparing against it needs special handling (see the XOR trick under <em>Verification</em>).</dd>
+      </div>
+
+      <div class="entry">
+        <dt>TopModule / RefModule</dt>
+        <dd>Naming convention used throughout this dataset's test files, not a Verilog language feature: <code>RefModule</code> is always the golden, known-correct implementation; <code>TopModule</code> is always the slot the model's generated code fills in.</dd>
+      </div>
+
+    </dl>
+  </section>
+
+  <section class="group" id="verification">
+    <div class="group-label"><span class="num">02</span><h2>Verification Concepts</h2></div>
+    <dl class="terms">
+
+      <div class="entry">
+        <dt>testbench</dt>
+        <dd>Code that isn't part of the design itself — it exists purely to drive inputs into the circuit being tested and check its outputs. Never synthesized into real hardware; it only exists inside the simulator.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>DUT <span class="also">(device under test)</span></dt>
+        <dd>Whichever implementation the testbench is currently judging — here, the model's generated code. Standard verification-industry term, used regardless of whether the "device" is a full chip or a small module.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>golden reference / golden model</dt>
+        <dd>The trusted, known-correct implementation everything else gets compared against. "Golden" here just means "assumed correct by definition," not any technical property of the code itself.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>stimulus</dt>
+        <dd>The specific sequence of input values a testbench applies during simulation — the test cases, essentially, whether hand-written (directed) or randomly generated.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>differential testing</dt>
+        <dd>Checking correctness by running two implementations side by side under identical inputs and comparing their outputs, rather than checking either one against a fixed expected-output list. This is the whole verification strategy ChipBench uses.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>functional equivalence</dt>
+        <dd>Two pieces of code count as "the same" if they produce identical outputs for every input, regardless of how differently they're written internally — the opposite of comparing source code text.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>RTL <span class="also">(register-transfer level)</span></dt>
+        <dd>The abstraction level Verilog is normally written at: describing logic in terms of registers and the transfers between them on each clock edge, one level up from individual transistors/gates.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>synthesis <span class="also">vs. simulation</span></dt>
+        <dd>Simulation runs Verilog to check behavior, entirely in software, nothing physical involved. Synthesis instead converts Verilog into an actual gate-level circuit description meant to become real hardware. ChipBench only simulates — nothing here ever gets manufactured.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>VCD <span class="also">(waveform dump)</span></dt>
+        <dd>A recorded trace of every signal's value at every moment in a simulation — what a waveform viewer displays as timing diagrams. This is the literal file format embedded in the one-shot debugging prompts.</dd>
+      </div>
+
+    </dl>
+  </section>
+
+  <section class="group" id="toolchain">
+    <div class="group-label"><span class="num">03</span><h2>The Simulation Toolchain</h2></div>
+    <dl class="terms">
+
+      <div class="entry">
+        <dt>Verilog / SystemVerilog</dt>
+        <dd>Verilog is the original hardware description language; SystemVerilog is a large superset added later (better types, more verification-oriented constructs like <code>logic</code>). Files ending <code>.sv</code> use the superset; the dataset here mixes both.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>iverilog / vvp</dt>
+        <dd>Two halves of one tool (Icarus Verilog): <code>iverilog</code> compiles Verilog source into a runnable simulation binary, and <code>vvp</code> executes that binary. Directly analogous to a compile step and a run step.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>Verilator</dt>
+        <dd>A different kind of simulator: instead of interpreting Verilog directly, it translates it into C++ source code, which then gets compiled and run like any other program. Used here for the refmodel task's cross-language checks.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>Yosys</dt>
+        <dd>An open-source synthesis tool — normally used to turn Verilog into gate-level circuits. Only its <strong>CXXRTL</strong> backend gets used in this project, for a different purpose than its main job.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>CXXRTL</dt>
+        <dd>A Yosys backend that compiles Verilog into standalone C++ classes runnable outside any simulator — effectively turning a Verilog module into a plain C++ object with an <code>eval()</code>-like step function, which is exactly what the reference-model verification needs.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>SystemC</dt>
+        <dd>A C++ class library for modeling hardware behavior directly in C++, without Verilog at all — one of the three reference-model languages in the original paper's benchmark (alongside Python and CXXRTL), though not currently scoreable here since the vendored toolbox has no working SystemC path.</dd>
+      </div>
+
+    </dl>
+  </section>
+
+  <section class="group" id="inspect">
+    <div class="group-label"><span class="num">04</span><h2>Inspect / Eval Terms</h2></div>
+    <dl class="terms">
+
+      <div class="entry">
+        <dt>Sample</dt>
+        <dd>One problem instance — one prompt plus whatever supporting files/target it needs to be scored. A dataset is a list of these.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>Task</dt>
+        <dd>Inspect's bundle of one dataset + one solver + one scorer (+ optional sandbox) — the unit that <code>inspect eval</code> actually runs.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>solver</dt>
+        <dd>The component that produces a completion from the model — here, just <code>generate()</code>, meaning "call the model once with the prompt and take its answer," with no tools or multi-turn loop involved.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>scorer</dt>
+        <dd>The component that judges a completion and assigns it correct/incorrect. In most evals this is a text comparison; here it's the entire compile-and-simulate pipeline covered earlier.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>epoch <span class="also">(this context, not ML training)</span></dt>
+        <dd>One full, independent attempt at a sample. Running 20 epochs means asking the model to solve the same problem 20 separate times — nothing to do with training-loop epochs; it exists purely to compute pass@k.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>pass@k</dt>
+        <dd>The probability that at least one of <var>k</var> independent attempts at a sample succeeds, estimated from a larger number of actual attempts (here, 20) rather than literally sampling exactly <var>k</var> times.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>sandbox / image / container</dt>
+        <dd>Covered in depth earlier in this conversation — briefly: an <em>image</em> is the frozen, pre-built filesystem template (Ubuntu + the compiled toolchain); a <em>container</em> is a disposable running instance of it, one per sample, torn down after scoring.</dd>
+      </div>
+
+    </dl>
+  </section>
+
+  <footer class="note">chipbench · src/chipbench · glossary compiled during implementation</footer>
+
+</div>
