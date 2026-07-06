@@ -1,17 +1,21 @@
 """Dataset loaders for ChipBench.
 
-The dataset is vendored locally (not HuggingFace) from
-https://github.com/zhongkaiyu/ChipBench (MIT licensed) under ``data/``.
-Each Verilog Gen / Debug problem is a ``{prompt.txt, ref.sv, test.sv}``
-triplet on disk; ``ref.sv`` declares ``module RefModule(...)`` and the model
-is asked to produce a matching ``module TopModule(...)``.
+Adapted from https://github.com/zhongkaiyu/ChipBench (MIT License,
+Copyright (c) 2023-2024 NVIDIA Research Projects). The dataset under
+``data/`` is vendored locally from that repository's ``Verilog Gen/`` and
+``Verilog Debugging/`` directories (not HuggingFace). Each Verilog Gen /
+Debug problem is a ``{prompt.txt, ref.sv, test.sv}`` triplet on disk;
+``ref.sv`` declares ``module RefModule(...)`` and the model is asked to
+produce a matching ``module TopModule(...)``.
 
-The Ref Model Gen task's dataset is not read from the vendored
-``ref_model_gen/`` folder — that folder is a separate training-data-generation
-tool built on an unrelated corpus, not the paper's 44x3 benchmark. Instead we
-construct the samples ourselves by pairing each Verilog Gen problem's own
-spec with the vendored ``gen_{python,cxxrtl}_prompt.txt`` templates (see
-prompts.py for why SystemC is excluded).
+The Ref Model Gen task's dataset is *not* read from the upstream repo's
+``Ref Model Gen/`` directory (not vendored here at all, beyond its three
+``gen_*_prompt.txt`` templates) — that directory is a separate
+training-data-generation tool built on an unrelated corpus, not the paper's
+44x3 benchmark. Instead we construct the samples ourselves by pairing each
+Verilog Gen problem's own spec with the vendored
+``gen_{python,cxxrtl}_prompt.txt`` templates (see prompts.py for why
+SystemC is excluded).
 
 Note on sample counts: the vendored repo's ``verilog_gen`` data contains 45
 problems (30 self-contained + 6 not-self-contained + 9 cpu-design), one more

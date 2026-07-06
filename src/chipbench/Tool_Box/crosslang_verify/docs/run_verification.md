@@ -53,11 +53,13 @@ Returns `0` on success, `1` on failure.
 The build adapts based on which DUTs are provided:
 
 **With `dut_sv`:**
+
 1. `verilator --cc ref.sv` → VRefModule
 2. `verilator --cc dut.sv --exe testbench.cpp` → VTopModule
 3. Build both libraries, link together
 
 **Without `dut_sv`:**
+
 1. `verilator --cc ref.sv --exe testbench.cpp` → VRefModule + testbench
 2. Build and link with VRefModule only
 

@@ -157,10 +157,16 @@ def _build_and_run(ref_basename, dut_basename, has_cxxrtl):
         mk = "VRefModule.mk"
         libs = ["obj_dir/VRefModule__ALL.a"]
 
+    # verilated_threads.o is required starting with Verilator 5.x: the
+    # runtime unconditionally references VlThreadPool from verilated.cpp,
+    # but its implementation lives in the separate verilated_threads.cpp
+    # translation unit, which must always be linked even when the model
+    # itself doesn't use threading. (Adapted from the upstream script,
+    # which predates this Verilator requirement - see NOTICE.)
     ok, _ = _run(
         ["make", "-C", "obj_dir", "-f", mk,
          f"V{'TopModule' if dut_basename else 'RefModule'}__ALL.a",
-         "testbench.o", "verilated.o"],
+         "testbench.o", "verilated.o", "verilated_threads.o"],
         f"make objects",
     )
     if not ok:
@@ -168,7 +174,8 @@ def _build_and_run(ref_basename, dut_basename, has_cxxrtl):
 
     print("  Linking...")
     ok, _ = _run(
-        ["g++", "-o", "obj_dir/sim", "obj_dir/testbench.o", "obj_dir/verilated.o", *libs],
+        ["g++", "-o", "obj_dir/sim", "obj_dir/testbench.o", "obj_dir/verilated.o",
+         "obj_dir/verilated_threads.o", *libs],
         "linking",
     )
     if not ok:

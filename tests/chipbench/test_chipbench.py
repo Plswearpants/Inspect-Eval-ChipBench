@@ -6,7 +6,7 @@ default fast test run.
 """
 
 import pytest
-from inspect_ai import eval
+from inspect_ai import Epochs, eval
 from inspect_ai.model import Model, ModelOutput, get_model
 
 from chipbench import chipbench_debug, chipbench_refmodel, chipbench_verilog_gen
@@ -87,7 +87,7 @@ def test_verilog_gen_correct_completion_passes() -> None:
     [log] = eval(
         tasks=chipbench_verilog_gen(category="self_contained"),
         model=_mock_model(_CORRECT_TOP_MODULE_SV),
-        epochs=1,
+        epochs=Epochs(1, ["pass_at_1"]),
         sample_id="self_contained/Prob001_continuous_input_sequence_detect",
     )
     assert log.status == "success"
@@ -101,7 +101,7 @@ def test_verilog_gen_incorrect_completion_fails() -> None:
     [log] = eval(
         tasks=chipbench_verilog_gen(category="self_contained"),
         model=_mock_model(_INCORRECT_TOP_MODULE_SV),
-        epochs=1,
+        epochs=Epochs(1, ["pass_at_1"]),
         sample_id="self_contained/Prob001_continuous_input_sequence_detect",
     )
     assert log.status == "success"
@@ -116,7 +116,7 @@ def test_debug_e2e() -> None:
     [log] = eval(
         tasks=chipbench_debug(shot="zero_shot", bug_type="arithmetic"),
         model=_mock_model(_CORRECT_TOP_MODULE_SV),
-        epochs=1,
+        epochs=Epochs(1, ["pass_at_1"]),
         sample_id="zero_shot_arithmetic/Prob001_continuous_input_sequence_detect",
     )
     assert log.status == "success"
@@ -128,7 +128,7 @@ def test_refmodel_e2e() -> None:
     [log] = eval(
         tasks=chipbench_refmodel(language="python"),
         model=_mock_model(_CORRECT_PYTHON_REFMODEL),
-        epochs=1,
+        epochs=Epochs(1, ["pass_at_1"]),
         sample_id="Prob001_continuous_input_sequence_detect/python",
     )
     assert log.status == "success"

@@ -1,0 +1,31 @@
+This file lists third-party code and data vendored into or adapted for this
+repository, per CONTRIBUTING.md's licensing and attribution requirements.
+
+--------------------------------------------------------------------------
+
+Project: ChipBench
+Copyright: Copyright (c) 2023-2024 NVIDIA Research Projects
+Source: https://github.com/zhongkaiyu/ChipBench
+License: MIT
+
+Files:
+  - src/chipbench/data/**  (dataset: Verilog Gen / Verilog Debugging problem
+    triplets, and the three gen_{python,cxxrtl,systemc}_prompt.txt reference
+    model prompt templates, vendored verbatim from the upstream repository's
+    "Verilog Gen/", "Verilog Debugging/", and "Ref Model Gen/" directories)
+  - src/chipbench/Tool_Box/crosslang_verify/**  (cross-language verification
+    toolbox, vendored from the upstream repository's
+    "Tool_Box/crosslang_verify/" directory; invoked as a subprocess by
+    src/chipbench/scorers.py rather than imported, and excluded from this
+    project's own lint/type-check/format tooling for that reason — see the
+    exclusion comments in pyproject.toml. One file is modified from
+    upstream: src/run_verification.py's link step now also builds and
+    links verilated_threads.o, required by Verilator 5.x but not by the
+    older Verilator version the upstream script was written against — see
+    the comment at that change in the file.)
+  - src/chipbench/chipbench.py  (adapted: task structure and parameters)
+  - src/chipbench/dataset.py  (adapted: dataset loading logic)
+  - src/chipbench/scorers.py  (adapted: scoring logic, calling the vendored
+    crosslang_verify tool and re-implementing the upstream test.sv
+    Mismatches-parsing convention for Icarus Verilog based scoring)
+  - src/chipbench/prompts.py  (adapted: reference-model prompt loading)

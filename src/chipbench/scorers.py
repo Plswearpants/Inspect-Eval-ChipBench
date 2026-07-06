@@ -1,8 +1,10 @@
 """Scorers for ChipBench.
 
-Both scorers run inside the sandboxed toolchain (Icarus Verilog, Yosys/CXXRTL,
-Verilator) and defer to the vendored ChipBench verification code rather than
-reimplementing simulation or comparison logic:
+Adapted from https://github.com/zhongkaiyu/ChipBench (MIT License,
+Copyright (c) 2023-2024 NVIDIA Research Projects). Both scorers run inside
+the sandboxed toolchain (Icarus Verilog, Yosys/CXXRTL, Verilator) and defer
+to the vendored ChipBench verification code rather than reimplementing
+simulation or comparison logic:
 
 - ``iverilog_scorer`` (verilog_gen, debug): compiles the model's generated
   Verilog together with the sample's ``ref.sv``/``test.sv`` (already staged

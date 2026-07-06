@@ -5,6 +5,7 @@ Zaifeng Pan, Jishen Zhao, Yufei Ding
 https://arxiv.org/abs/2601.21448
 
 Based on: https://github.com/zhongkaiyu/ChipBench
+(MIT License, Copyright (c) 2023-2024 NVIDIA Research Projects)
 
 # Verilog generation
 inspect eval chipbench/chipbench_verilog_gen

@@ -1,8 +1,9 @@
 """Prompt templates for the ChipBench reference-model-generation task.
 
-These are the vendored system prompts the ChipBench authors use to instruct
-a model to produce a reference model. Source:
-https://github.com/zhongkaiyu/ChipBench/tree/main/Ref%20Model%20Gen
+Adapted from https://github.com/zhongkaiyu/ChipBench/tree/main/Ref%20Model%20Gen
+(MIT License, Copyright (c) 2023-2024 NVIDIA Research Projects). These are
+the vendored system prompts the ChipBench authors use to instruct a model
+to produce a reference model.
 
 Only Python and CXXRTL are supported: the vendored ``Tool_Box/crosslang_verify``
 verification toolbox has no working SystemC path (``dut_systemc_file`` is an
