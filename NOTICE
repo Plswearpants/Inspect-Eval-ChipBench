@@ -18,11 +18,32 @@ Files:
     "Tool_Box/crosslang_verify/" directory; invoked as a subprocess by
     src/chipbench/scorers.py rather than imported, and excluded from this
     project's own lint/type-check/format tooling for that reason — see the
-    exclusion comments in pyproject.toml. One file is modified from
-    upstream: src/run_verification.py's link step now also builds and
-    links verilated_threads.o, required by Verilator 5.x but not by the
-    older Verilator version the upstream script was written against — see
-    the comment at that change in the file.)
+    exclusion comments in pyproject.toml. Three files are modified from
+    upstream, all documented in README.md's Evaluation Report and at
+    the change itself:
+      - src/run_verification.py's link step now also builds and links
+        verilated_threads.o, required by Verilator 5.x but not by the
+        older Verilator version the upstream script was written against.
+      - src/generate_testbench.py's warmup-code generation now gates
+        sequential-only DUT initialization behind is_sequential, which the
+        upstream version omitted, causing combinational-circuit testbenches
+        to reference a clock signal that correctly doesn't exist for them.
+      - tools/extract_ports.py's port-extraction regex now (a) only scans
+        the first module in a file rather than the whole file, since a
+        submodule staged into the same ref.sv for chipbench_refmodel (see
+        Bug 2) could otherwise have its ports merged into the top module's,
+        and (b) resolves parametrized bit-widths (e.g. [DATA_WIDTH-1:0] or
+        [`WORD_SIZE-1:0]) by looking up parameter/localparam/`define values
+        in the file, rather than assuming widths are always literal
+        integers — the original regex would silently mis-extract the type
+        keyword itself ("reg"/"wire"/"logic") as the port name when it hit
+        a non-literal width, which is Bug 6 in the known-issues doc.
+  - src/chipbench/data/refmodel_prompts/gen_cxxrtl_prompt_fixed.txt  (new
+    file, not vendored: a corrected variant of the upstream
+    gen_cxxrtl_prompt.txt, rewriting its CXXRTL virtual-method
+    instructions/examples to match Yosys v0.60's actual API rather than the
+    outdated one upstream's original teaches; used for A/B-testing via
+    chipbench_refmodel's cxxrtl_prompt_variant parameter, not the default)
   - src/chipbench/chipbench.py  (adapted: task structure and parameters)
   - src/chipbench/dataset.py  (adapted: dataset loading logic)
   - src/chipbench/scorers.py  (adapted: scoring logic, calling the vendored

@@ -18,9 +18,13 @@ inspect eval chipbench/chipbench_debug -T shot=one_shot -T bug_type=timing
 
 # Reference model generation (Python or CXXRTL; SystemC is not scoreable, see prompts.py)
 inspect eval chipbench/chipbench_refmodel -T language=python
+
+# A/B-test the corrected CXXRTL prompt (see known-issues/refmodel-scoring-gaps.md)
+inspect eval chipbench/chipbench_refmodel -T language=cxxrtl -T cxxrtl_prompt_variant=fixed
 """
 
 from pathlib import Path
+from typing import Literal
 
 from inspect_ai import Epochs, Task, task
 from inspect_ai.model import GenerateConfig
@@ -96,16 +100,32 @@ def chipbench_debug(
 
 
 @task
-def chipbench_refmodel(language: RefModelLanguage | None = None) -> Task:
+def chipbench_refmodel(
+    language: RefModelLanguage | None = None,
+    cxxrtl_prompt_variant: Literal["default", "fixed"] = "default",
+    stage_missing_defines: bool = True,
+) -> Task:
     """Cross-language reference model generation.
 
     Args:
         language: Restrict to one target language ("python" or "cxxrtl").
             If None, includes both. SystemC is part of the original
             benchmark but is excluded here — see prompts.py for why.
+        cxxrtl_prompt_variant: "default" (vendored as-is) or "fixed" (a
+            corrected CXXRTL API for A/B-testing against the default — see
+            README.md's Evaluation Report for why the default fails to
+            compile against the pinned Yosys version).
+        stage_missing_defines: whether to apply Bug 5's fix (inject
+            `` `define `` macros ref.sv needs but doesn't itself define).
+            Defaults to True; set False to reproduce the paper's original
+            ref.sv/test.sv split for a before/after comparison.
     """
     return Task(
-        dataset=refmodel_samples(language=language),
+        dataset=refmodel_samples(
+            language=language,
+            cxxrtl_prompt_variant=cxxrtl_prompt_variant,
+            stage_missing_defines=stage_missing_defines,
+        ),
         epochs=Epochs(NUM_EPOCHS, ["pass_at_1", "pass_at_5", "pass_at_10"]),
         solver=generate(),
         scorer=crosslang_verify_scorer(),

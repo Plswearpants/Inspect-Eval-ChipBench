@@ -31,6 +31,7 @@ from typing import Literal
 from inspect_ai.dataset import Dataset, MemoryDataset, Sample
 
 from chipbench.prompts import (
+    CXXRTL_PROMPT_FIXED,
     REFMODEL_LANGUAGES,
     REFMODEL_SYSTEM_PROMPTS,
     RefModelLanguage,
@@ -51,6 +52,83 @@ BUG_TYPES: tuple[BugType, ...] = ("arithmetic", "assignment", "state_machine", "
 SHOTS: tuple[Shot, ...] = ("zero_shot", "one_shot")
 
 _PROBLEM_ID_PATTERN = re.compile(r"^(Prob\d+_.+)_prompt\.txt$")
+_SUBMODULE_SOURCE_PATTERN = re.compile(r"```(?:verilog)?\n(.*?)```", re.DOTALL)
+_MACRO_USE_PATTERN = re.compile(r"`([A-Za-z_]\w*)")
+_MACRO_DEFINE_PATTERN = re.compile(r"^\s*`define\s+([A-Za-z_]\w*)\b", re.MULTILINE)
+# Verilog/SystemVerilog compiler directives -- a backtick-identifier that
+# isn't one of these is a macro reference that needs a `define somewhere.
+_COMPILER_DIRECTIVES = frozenset(
+    {
+        "timescale",
+        "celldefine",
+        "endcelldefine",
+        "default_nettype",
+        "include",
+        "define",
+        "undef",
+        "ifdef",
+        "ifndef",
+        "else",
+        "elsif",
+        "endif",
+        "resetall",
+        "unconnected_drive",
+        "nounconnected_drive",
+        "line",
+        "pragma",
+        "protect",
+        "endprotect",
+    }
+)
+
+
+def _extract_submodule_source(prompt: str) -> str | None:
+    """Extract embedded submodule Verilog source from a not_self_contained prompt.
+
+    not_self_contained problems give the model a required submodule's source
+    inline in the prompt (a fenced code block) rather than in ref.sv itself —
+    ref.sv only defines RefModule and instantiates the submodule. verilog_gen/
+    debug get the submodule "for free" since the model's own generated.sv is
+    compiled alongside ref.sv in the same iverilog invocation; chipbench_refmodel
+    compiles ref.sv alone via Verilator and needs the submodule supplied
+    explicitly, or every not_self_contained sample fails with a Verilator
+    MODMISSING error regardless of what the model writes (see README.md's
+    Evaluation Report).
+    """
+    match = _SUBMODULE_SOURCE_PATTERN.search(prompt)
+    return match.group(1) if match else None
+
+
+def _extract_missing_defines(ref: str, test: str) -> str | None:
+    """Extract `` `define `` macros ref.sv uses but doesn't itself define, from test.sv.
+
+    Some problems' ref.sv references Verilog preprocessor macros (e.g.
+    `` `Branch ``, `` `ZeroWord ``) whose `` `define `` only appears in
+    test.sv. Preprocessor directives are global across all files compiled
+    together, so this works by accident for verilog_gen/debug (which
+    compile ref.sv + test.sv + generated.sv in one iverilog invocation) but
+    not chipbench_refmodel, which compiles ref.sv alone via Verilator and
+    needs the macros supplied explicitly, or every such problem fails with
+    "Define or directive not defined" regardless of what the model writes
+    (see README.md's Evaluation Report).
+    """
+    used = {
+        name
+        for name in _MACRO_USE_PATTERN.findall(ref)
+        if name not in _COMPILER_DIRECTIVES
+    }
+    if not used:
+        return None
+    already_defined = set(_MACRO_DEFINE_PATTERN.findall(ref))
+    missing = used - already_defined
+    if not missing:
+        return None
+    define_lines = [
+        line
+        for line in test.splitlines()
+        if (match := _MACRO_DEFINE_PATTERN.match(line)) and match.group(1) in missing
+    ]
+    return "\n".join(define_lines) if define_lines else None
 
 
 def _find_problem_ids(directory: Path) -> list[str]:
@@ -127,13 +205,27 @@ def debug_samples(
     return MemoryDataset(samples=samples, name="chipbench_debug")
 
 
-def refmodel_samples(language: RefModelLanguage | None = None) -> Dataset:
+def refmodel_samples(
+    language: RefModelLanguage | None = None,
+    cxxrtl_prompt_variant: Literal["default", "fixed"] = "default",
+    stage_missing_defines: bool = True,
+) -> Dataset:
     """Build the (constructed) Reference Model Generation dataset.
 
     Args:
         language: Restrict to one target language ("python" or "cxxrtl").
             If None, includes both (one sample per language per Verilog Gen
             problem).
+        cxxrtl_prompt_variant: "default" uses the vendored gen_cxxrtl_prompt.txt
+            as-is; "fixed" swaps in prompts.CXXRTL_PROMPT_FIXED, a corrected
+            variant for A/B-testing whether the original's outdated CXXRTL API
+            is actually why CXXRTL scores so low (see README.md's Evaluation
+            Report). Has no effect on the "python" language.
+        stage_missing_defines: whether to inject `` `define `` macros ref.sv
+            uses but doesn't itself define (Bug 5's fix). Defaults to True;
+            set False to reproduce the paper's original ref.sv/test.sv split
+            as-is, e.g. for a before/after comparison against a pipeline that
+            mimics the paper's own methodology rather than our fixes.
     """
     if language is not None and language not in REFMODEL_LANGUAGES:
         raise ValueError(
@@ -146,9 +238,20 @@ def refmodel_samples(language: RefModelLanguage | None = None) -> Dataset:
     for cat in VERILOG_GEN_CATEGORIES:
         directory = DATA_DIR / "verilog_gen" / cat
         for problem_id in _find_problem_ids(directory):
-            prompt, ref, _test = _load_triplet(directory, problem_id)
+            prompt, ref, test = _load_triplet(directory, problem_id)
+            if cat == "not_self_contained":
+                submodule_source = _extract_submodule_source(prompt)
+                if submodule_source:
+                    ref = f"{ref}\n\n{submodule_source}"
+            if stage_missing_defines:
+                missing_defines = _extract_missing_defines(ref, test)
+                if missing_defines:
+                    ref = f"{missing_defines}\n\n{ref}"
             for lang in languages:
-                system_prompt = REFMODEL_SYSTEM_PROMPTS[lang]
+                if lang == "cxxrtl" and cxxrtl_prompt_variant == "fixed":
+                    system_prompt = CXXRTL_PROMPT_FIXED
+                else:
+                    system_prompt = REFMODEL_SYSTEM_PROMPTS[lang]
                 samples.append(
                     Sample(
                         id=f"{problem_id}/{lang}",
@@ -158,6 +261,8 @@ def refmodel_samples(language: RefModelLanguage | None = None) -> Dataset:
                             "problem_id": problem_id,
                             "category": cat,
                             "language": lang,
+                            "cxxrtl_prompt_variant": cxxrtl_prompt_variant,
+                            "stage_missing_defines": stage_missing_defines,
                         },
                     )
                 )

@@ -4,8 +4,11 @@ import pytest
 
 from chipbench.dataset import (
     BUG_TYPES,
+    DATA_DIR,
     SHOTS,
     VERILOG_GEN_CATEGORIES,
+    _extract_missing_defines,
+    _extract_submodule_source,
     debug_samples,
     refmodel_samples,
     verilog_gen_samples,
@@ -121,3 +124,122 @@ def test_refmodel_samples_excludes_systemc() -> None:
     """SystemC is part of the paper's benchmark but unscoreable with the vendored toolbox."""
     with pytest.raises(ValueError):
         refmodel_samples(language="systemc")  # type: ignore[arg-type]
+
+
+def test_extract_submodule_source_real_example() -> None:
+    """Prob002's not_self_contained prompt embeds the decoder_38 submodule inline."""
+    prompt = (
+        DATA_DIR
+        / "verilog_gen"
+        / "not_self_contained"
+        / "Prob002_implement_full_subtractor_using_three_to_eight_decoder_prompt.txt"
+    ).read_text()
+
+    source = _extract_submodule_source(prompt)
+
+    assert source is not None
+    assert "module decoder_38" in source
+    assert "endmodule" in source
+
+
+def test_extract_submodule_source_none_when_absent() -> None:
+    """Not every not_self_contained problem needs this: Prob001's ref.sv is self-sufficient."""
+    prompt = (
+        DATA_DIR
+        / "verilog_gen"
+        / "not_self_contained"
+        / "Prob001_submodules_to_implement_comparison_of_three_input_numbers_prompt.txt"
+    ).read_text()
+
+    assert _extract_submodule_source(prompt) is None
+
+
+def test_refmodel_samples_stages_submodule_source_for_not_self_contained() -> None:
+    """Bug 2 fix: chipbench_refmodel's ref.sv must include the submodule Verilator needs."""
+    dataset = refmodel_samples(language="python")
+    sample = next(
+        s
+        for s in dataset
+        if s.metadata is not None
+        and s.metadata["problem_id"]
+        == "Prob002_implement_full_subtractor_using_three_to_eight_decoder"
+    )
+
+    assert sample.files is not None
+    assert "module RefModule" in sample.files["ref.sv"]
+    assert "module decoder_38" in sample.files["ref.sv"]
+
+
+def test_extract_missing_defines_real_example() -> None:
+    """Prob006_PC_REG's ref.sv uses macros only defined in its test.sv."""
+    directory = DATA_DIR / "verilog_gen" / "cpu_ip"
+    ref = (directory / "Prob006_PC_REG_ref.sv").read_text()
+    test = (directory / "Prob006_PC_REG_test.sv").read_text()
+
+    defines = _extract_missing_defines(ref, test)
+
+    assert defines is not None
+    assert "`define Branch" in defines
+    assert "`define RstEnable" in defines
+
+
+def test_extract_missing_defines_none_when_absent() -> None:
+    """Most problems don't use undefined macros at all."""
+    directory = DATA_DIR / "verilog_gen" / "cpu_ip"
+    ref = (directory / "Prob001_controller_ref.sv").read_text()
+    test = (directory / "Prob001_controller_test.sv").read_text()
+
+    assert _extract_missing_defines(ref, test) is None
+
+
+def test_extract_missing_defines_ignores_compiler_directives() -> None:
+    """A bare `timescale (a self-contained directive) isn't a missing macro."""
+    ref = "`timescale 1ns/1ps\nmodule RefModule(); endmodule"
+    assert _extract_missing_defines(ref, test="") is None
+
+
+def test_refmodel_samples_stages_missing_defines_for_cpu_ip() -> None:
+    """Bug 5 fix: chipbench_refmodel's ref.sv must include macros test.sv defines."""
+    dataset = refmodel_samples(language="python")
+    sample = next(
+        s
+        for s in dataset
+        if s.metadata is not None and s.metadata["problem_id"] == "Prob006_PC_REG"
+    )
+
+    assert sample.files is not None
+    assert "`define Branch" in sample.files["ref.sv"]
+    assert "module RefModule" in sample.files["ref.sv"]
+
+
+def test_refmodel_samples_stages_missing_defines_for_not_self_contained() -> None:
+    """Bug 5 also affects one not_self_contained problem (Prob006_cpu_top)."""
+    dataset = refmodel_samples(language="python")
+    sample = next(
+        s
+        for s in dataset
+        if s.metadata is not None and s.metadata["problem_id"] == "Prob006_cpu_top"
+    )
+
+    assert sample.files is not None
+    assert "`define WORD_SIZE" in sample.files["ref.sv"]
+
+
+def test_refmodel_samples_stage_missing_defines_false_reproduces_bug_5() -> None:
+    """stage_missing_defines=False mimics the paper's original ref.sv/test.sv split.
+
+    Used for the before/after comparison run: our own fixes (Bug 1's prompt,
+    Bug 2's submodule staging) stay applied, but this specific paper-side bug
+    is left as the paper's original tooling would produce it.
+    """
+    dataset = refmodel_samples(language="python", stage_missing_defines=False)
+    sample = next(
+        s
+        for s in dataset
+        if s.metadata is not None and s.metadata["problem_id"] == "Prob006_PC_REG"
+    )
+
+    assert sample.files is not None
+    assert "`define Branch" not in sample.files["ref.sv"]
+    assert sample.metadata is not None
+    assert sample.metadata["stage_missing_defines"] is False

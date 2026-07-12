@@ -1,0 +1,222 @@
+
+You are a helpful assistant.
+
+Your task is to write **CXXRTL-compatible C++ code**, NOT Verilog.
+
+You must implement a C++ module that simulates the hardware DUT behavior
+using the CXXRTL (Yosys CXXRTL backend) API conventions.
+The output must strictly follow the CXXRTL format instructions below.
+
+============================================================
+CXXRTL DUT Implementation Requirements
+============================================================
+
+You MUST generate a file equivalent to `dut.cc` with the following rules:
+
+1. You MUST use the `cxxrtl` namespace and define a class named
+   `p_TopModule` inside the `cxxrtl_design` namespace.
+
+2. The class MUST inherit from `cxxrtl::module`:
+
+       namespace cxxrtl_design {
+       struct p_TopModule : public cxxrtl::module {
+           ...
+       };
+       }
+
+3. Port naming convention (CXXRTL name mangling):
+   - Each Verilog port `foo` becomes a member named `p_foo`
+   - Underscores in Verilog names are doubled: `my_sig` -> `p_my__sig`
+
+4. Port types:
+   - Input ports:  `cxxrtl::value<WIDTH> p_name;`
+   - Output ports: `cxxrtl::value<WIDTH> p_name;`
+   - For sequential circuits with clk:
+       - `cxxrtl::wire<1> p_clk;` (the clock specifically needs the
+         double-buffered `wire` type, not `value`, so its edge can be
+         detected — see rule 6)
+
+5. Required methods — `cxxrtl::module` has exactly three pure virtual
+   methods, and ALL THREE must be overridden or the class will not compile:
+
+   - `void reset() override` — initialize/zero all state. An empty body
+     is fine if all state members are already zero-initialized by their
+     default constructors.
+   - `bool eval(cxxrtl::performer *performer = nullptr) override` —
+     compute outputs from inputs (and advance state on a clock edge).
+     Return `true`.
+   - `bool commit() override` — for every `wire<N>` member (typically
+     just `p_clk`), copy `.next` into `.curr` if it changed, and return
+     whether anything changed overall. Do this by comparing and assigning
+     `.curr`/`.next` directly — both are public members:
+
+         bool commit() override {
+             bool changed = false;
+             if (p_clk.curr != p_clk.next) {
+                 p_clk.curr = p_clk.next;
+                 changed = true;
+             }
+             return changed;
+         }
+
+     Do NOT call `wire::commit(observer)` — that is a different,
+     unrelated overload that mandatorily takes an explicit observer
+     argument for tracing purposes, and is not what a DUT needs here.
+
+6. Combinational vs Sequential logic:
+   - If the circuit is combinational:
+       - Do NOT store any state, and there is no `p_clk` member at all
+       - `eval()` computes outputs purely from current inputs
+       - `commit()` can just `return false;`
+   - If the circuit is sequential:
+       - Maintain state using plain `cxxrtl::value<N>` member variables
+         (only the clock itself needs to be a `wire<N>`)
+       - The test harness calls `p_clk.set(...)`, then `eval()`, then
+         `commit()`, in that order — so inside `eval()`, `p_clk.curr`
+         still holds the previous cycle's value while `p_clk.next`
+         already holds the newly-set value. Detect a rising edge like
+         this, BEFORE `commit()` has latched `next` into `curr`:
+
+             bool posedge_clk = (p_clk.curr.data[0] == 0) &&
+                                 (p_clk.next.data[0] == 1);
+
+       - On a detected rising edge, update your state members; always
+         drive the output ports from the (possibly just-updated) state
+
+7. Bit-width behavior:
+   - Use `cxxrtl::value<N>` for N-bit values
+   - Access raw data via `.data[i]` (array of uint32_t chunks)
+   - For values <= 32 bits, use `.data[0]`
+   - Apply bit-masks when needed
+
+8. You MUST include the CXXRTL header:
+       #include <cxxrtl/cxxrtl.h>
+
+============================================================
+Output Format Instructions (VERY IMPORTANT)
+============================================================
+
+- You MUST output ONLY valid C++ code
+- Do NOT include any explanation text
+- Do NOT include Verilog
+- Do NOT include Markdown explanations
+- Do NOT include `<think>` tags
+- The entire output MUST be enclosed in ONE C++ code block:
+
+============================================================
+Example (Combinational — 1-bit AND gate)
+============================================================
+
+```cpp
+#include <cxxrtl/cxxrtl.h>
+
+namespace cxxrtl_design {
+
+struct p_TopModule : public cxxrtl::module {
+    cxxrtl::value<1> p_a;
+    cxxrtl::value<1> p_b;
+    cxxrtl::value<1> p_y;
+
+    void reset() override {
+    }
+
+    bool eval(cxxrtl::performer *performer = nullptr) override {
+        p_y.data[0] = p_a.data[0] & p_b.data[0] & 0x1;
+        return true;
+    }
+
+    bool commit() override {
+        return false;
+    }
+};
+
+} // namespace cxxrtl_design
+```
+
+============================================================
+Example (Sequential — 8-bit D flip-flop with reset)
+============================================================
+
+```cpp
+#include <cxxrtl/cxxrtl.h>
+
+namespace cxxrtl_design {
+
+struct p_TopModule : public cxxrtl::module {
+    cxxrtl::wire<1> p_clk;
+    cxxrtl::value<1> p_reset;
+    cxxrtl::value<8> p_d;
+    cxxrtl::value<8> p_q;
+
+    cxxrtl::value<8> state_q;
+
+    void reset() override {
+        state_q.data[0] = 0;
+    }
+
+    bool eval(cxxrtl::performer *performer = nullptr) override {
+        bool posedge_clk = (p_clk.curr.data[0] == 0) && (p_clk.next.data[0] == 1);
+
+        if (posedge_clk) {
+            if (p_reset.data[0] & 1) {
+                state_q.data[0] = 0;
+            } else {
+                state_q.data[0] = p_d.data[0] & 0xFF;
+            }
+        }
+
+        p_q.data[0] = state_q.data[0] & 0xFF;
+        return true;
+    }
+
+    bool commit() override {
+        bool changed = false;
+        if (p_clk.curr != p_clk.next) {
+            p_clk.curr = p_clk.next;
+            changed = true;
+        }
+        return changed;
+    }
+};
+
+} // namespace cxxrtl_design
+```
+
+============================================================
+Example (Combinational — port names containing underscores)
+============================================================
+
+Port naming reminder: a Verilog port named `data_out` is NOT `p_data_out`
+in CXXRTL — every underscore in the ORIGINAL name is doubled, giving
+`p_data__out`. This applies no matter how many underscores a name has:
+`valid_in` -> `p_valid__in`, `almost_full` -> `p_almost__full`.
+
+```cpp
+#include <cxxrtl/cxxrtl.h>
+
+namespace cxxrtl_design {
+
+struct p_TopModule : public cxxrtl::module {
+    cxxrtl::value<8> p_data__in;
+    cxxrtl::value<1> p_valid__in;
+    cxxrtl::value<8> p_data__out;
+
+    void reset() override {
+    }
+
+    bool eval(cxxrtl::performer *performer = nullptr) override {
+        p_data__out.data[0] = p_valid__in.data[0] ? p_data__in.data[0] : 0;
+        return true;
+    }
+
+    bool commit() override {
+        return false;
+    }
+};
+
+} // namespace cxxrtl_design
+```
+
+============================================================
+Now generate the correct CXXRTL C++ implementation for the given circuit.
+============================================================

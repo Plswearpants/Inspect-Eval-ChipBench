@@ -147,7 +147,15 @@ def _gen_warmup(sig, inline_duts, is_sequential, has_reset, has_batch, valid_sig
     compare_enable = _compare_enable_code(valid_signals)
     collect_enable = _collect_compare_enable(has_batch, bool(valid_signals))
 
-    seq_init = ''.join(d.sequential_init() + "\n\n" for d in inline_duts if d.sequential_init())
+    # Gated on is_sequential: previously called unconditionally, which made
+    # CXXRTL's sequential_init() (cxxrtl_dut.p_clk.set(0); ...) emit into
+    # testbenches for purely combinational circuits that correctly have no
+    # p_clk member at all, causing a guaranteed compile failure regardless of
+    # the DUT's own correctness. See README.md's Evaluation Report.
+    seq_init = (
+        ''.join(d.sequential_init() + "\n\n" for d in inline_duts if d.sequential_init())
+        if is_sequential else ''
+    )
 
     if is_sequential:
         eval_section = f"""

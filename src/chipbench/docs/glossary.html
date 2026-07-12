@@ -308,6 +308,11 @@
         <dd>Naming convention used throughout this dataset's test files, not a Verilog language feature: <code>RefModule</code> is always the golden, known-correct implementation; <code>TopModule</code> is always the slot the model's generated code fills in.</dd>
       </div>
 
+      <div class="entry">
+        <dt>self_contained / not_self_contained / cpu_ip</dt>
+        <dd>ChipBench's own dataset category labels, not a Verilog concept. <code>self_contained</code> problems are one complete module; <code>not_self_contained</code> problems instantiate a submodule whose definition lives elsewhere (embedded in the prompt text, not in <code>ref.sv</code> — see <em>submodule staging</em>); <code>cpu_ip</code> is a separate category of real CPU-component designs, harder and unrelated to the self-contained/not-self-contained split.</dd>
+      </div>
+
     </dl>
   </section>
 
@@ -383,6 +388,16 @@
       </div>
 
       <div class="entry">
+        <dt>MODMISSING</dt>
+        <dd>Verilator's specific error when a Verilog file instantiates a module by name but no file given to the compiler defines it — e.g. a top-level module calling a submodule whose source was never included in the build. A compile-time failure, unrelated to whether the design's actual logic is correct.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>override <span class="also">(C++ keyword)</span></dt>
+        <dd>Marks a method as intentionally replacing a virtual method inherited from a base class — not optional decoration; the compiler checks the signature actually matches something in the base class and errors if it doesn't (e.g. wrong argument list, wrong return type). Used here to catch exactly that: generated CXXRTL code implementing <code>reset()</code>/<code>eval()</code>/<code>commit()</code> with a signature that no longer matches the pinned CXXRTL version's base class.</dd>
+      </div>
+
+      <div class="entry">
         <dt>Yosys</dt>
         <dd>An open-source synthesis tool — normally used to turn Verilog into gate-level circuits. Only its <strong>CXXRTL</strong> backend gets used in this project, for a different purpose than its main job.</dd>
       </div>
@@ -390,6 +405,16 @@
       <div class="entry">
         <dt>CXXRTL</dt>
         <dd>A Yosys backend that compiles Verilog into standalone C++ classes runnable outside any simulator — effectively turning a Verilog module into a plain C++ object with an <code>eval()</code>-like step function, which is exactly what the reference-model verification needs.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>CXXRTL name mangling</dt>
+        <dd>CXXRTL's port-naming rule: a Verilog port <code>foo</code> becomes a C++ member <code>p_foo</code>, and every underscore already in the original name gets doubled — <code>data_out</code> becomes <code>p_data__out</code>, not <code>p_data_out</code>. Easy to get wrong since a single-underscore version compiles as a *different*, plausible-looking member name rather than failing loudly — the model has to apply this consistently across every port in a file with no per-port feedback.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>wire&lt;N&gt; vs. value&lt;N&gt;</dt>
+        <dd>Two different CXXRTL storage types, not interchangeable despite similar names. <code>value&lt;N&gt;</code> is a plain N-bit value — one slot, read and written directly. <code>wire&lt;N&gt;</code> is double-buffered (separate <code>.curr</code>/<code>.next</code> fields plus a <code>.commit()</code> step to latch one into the other) specifically so an edge (0→1 transition) can still be detected after the new value has already been set — needed for the clock signal, since a naive single-slot value would overwrite the "before" state before anything gets a chance to compare it.</dd>
       </div>
 
       <div class="entry">
@@ -437,6 +462,11 @@
       <div class="entry">
         <dt>sandbox / image / container</dt>
         <dd>Covered in depth earlier in this conversation — briefly: an <em>image</em> is the frozen, pre-built filesystem template (Ubuntu + the compiled toolchain); a <em>container</em> is a disposable running instance of it, one per sample, torn down after scoring.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>staging <span class="also">(dataset construction)</span></dt>
+        <dd>Assembling the actual file contents that get written into a sample's sandbox before it runs — e.g. deciding what <code>ref.sv</code> should contain. Not an Inspect API term, just the name used in this project for the dataset-building step; a bug here (a reference file staged without a submodule it depends on) can guarantee a compile failure regardless of what the model produces, before scoring even considers the model's answer.</dd>
       </div>
 
     </dl>
