@@ -1,353 +1,461 @@
-# Inspect Eval Template
+# ChipBench: A Next-Step Benchmark for Evaluating LLM Performance in AI-Aided Chip Design
 
-A template repository for building [Inspect AI](https://inspect.aisi.org.uk/)
-evaluations, part of the [inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals)
-registry. Supports multiple evaluations in a single repository.
+[ChipBench](https://arxiv.org/abs/2601.21448) evaluates LLM capability in AI-aided chip design across three tasks: generating Verilog RTL from a specification, debugging Verilog with an injected bug (arithmetic, assignment, timing, or state-machine), and generating a cross-language reference model (Python or CXXRTL) for a Verilog module. Unlike earlier Verilog benchmarks (VerilogEval, RTLLM), ChipBench's modules are substantially longer and more complex (averaging 61.7 lines / 438.7 cells vs. ~16-46 lines / ~7-33 cells), and its top-performing model in the original paper (Claude 4.5 Opus) solves only 30.74% of Verilog generation problems and 13.33% of Python reference-model problems pass@1 — far from saturated.
 
-## Important Features
+Scoring is by functional-equivalence simulation, not string matching: generated Verilog is compiled and simulated against a golden reference with Icarus Verilog (generation, debugging), or a generated Python/CXXRTL reference model is checked against the golden Verilog with a Verilator-based cross-language differential test (reference model generation), reusing the ChipBench authors' own verification tooling rather than reimplementing it.
 
-This template contains:
+<!-- Contributors: Automatically Generated -->
+Contributed by [@Plswearpants](https://github.com/Plswearpants)
+<!-- /Contributors: Automatically Generated -->
 
-- [Skills](#skills) — Claude Code skills to help produce evaluations, improve
-  their quality, and speed up velocity.
-- [Documentation](#documentation) — guides on best practices and recommended
-  standards.
-- [Examples](#examples) — example evaluations that show how to produce
-  evaluations in Inspect.
+<!-- Usage: Automatically Generated -->
+## Usage
 
-## Getting started
-
-1. **Fork this repository** — click "Use this template" (or fork) on GitHub
-   to create your own copy, then clone it:
-
-   ```bash
-   git clone https://github.com/<your-username>/<your-repo>.git
-   cd <your-repo>
-   ```
-
-2. **Install dependencies and run**:
-
-   ```bash
-   # Install dependencies
-   uv sync
-
-   # Run an evaluation
-   uv run inspect eval src/<eval_name>/<task_file>.py@<task_name>
-
-   # Run tests
-   uv run pytest -k "not agentic"
-
-   # Run linters
-   uv run ruff check && uv run ruff format --check && uv run mypy src tests
-   ```
-
-## Quickstart
-
-1. Fork and clone (see above), then `uv sync`
-2. Copy an example: `cp -r src/examples/simple_qa src/<eval_name>`
-3. Rename the module file, `@task` function, and `__init__.py` import to
-   match your package (replace `simple_qa` / `examples.simple_qa.simple_qa`
-   references with your own names).
-4. In `pyproject.toml`, set the distribution name and add an entry point:
-
-   ```toml
-   [project]
-   name = "<eval_name>"
-
-   [project.entry-points.inspect_ai]
-   <eval_name> = "<eval_name>"
-   ```
-
-5. Run it: `uv run inspect eval <eval_name>/<task_name> --model openai/gpt-5-nano` # note: the task_name is saved in src/eval_dir/task_file, if the project name != eval_dir  `uv run inspect eval task_name` will work instead
-
-See `src/examples/` for complete working examples, including a real
-benchmark adaptation (GPQA).
-
-## Structure
-
-Each evaluation lives in its own directory under `src/` and is registered via
-entry points in `pyproject.toml`. Tests go in `tests/<eval_name>/`.
-
-```text
-src/
-  <eval_name>/          # Your evaluation
-    __init__.py         # Exports task function(s) for Inspect discovery
-    <eval_name>.py      # Task implementation
-    eval.yaml           # Evaluation metadata
-  examples/             # Example evaluations (not registered)
-tests/
-  <eval_name>/          # Tests for your evaluation
-  examples/             # Tests for examples
-```
-
-## Adding evaluations
-
-1. Create a new directory under `src/` (e.g., `src/my_eval/`) — copying one of
-   `src/examples/` is the easiest start. It needs an `__init__.py` that exports
-   your `@task` functions and an `eval.yaml` (see `src/examples/gpqa/eval.yaml`
-   for a fully populated example).
-2. Add an entry point in `pyproject.toml`:
-
-   ```toml
-   [project.entry-points.inspect_ai]
-   my_eval = "my_eval"
-   ```
-
-3. Add the module name to `[tool.setuptools.packages.find]` include list
-4. Add a mypy override for the new module
-
-## Examples
-
-The `src/examples/` directory contains three working evaluations demonstrating
-common patterns. These are not registered as evaluations — they exist purely
-as reference implementations you can copy from. Keep them in place: they're
-managed files (kept up-to-date by `sync-template.yml`) and don't ship as
-part of your eval's wheel.
-
-### Simple Q&A (`src/examples/simple_qa/`)
-
-A straightforward question-answering evaluation using `match()` scoring.
-Demonstrates dataset conversion, prompt templates, and few-shot examples.
-Similar to evaluations like GPQA.
-
-### LLM-as-Judge (`src/examples/llm_judge/`)
-
-An evaluation that uses a language model to grade open-ended responses via
-`model_graded_qa()`. Demonstrates custom grading templates and judge model
-configuration. Similar to evaluations like Healthbench.
-
-### GPQA (`src/examples/gpqa/`)
-
-A real-world benchmark adaptation demonstrating external dataset loading,
-multiple-choice scoring, and domain filtering. Adapted from the
-[inspect_evals implementation](https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gpqa).
-Includes a fully-populated `eval.yaml` showing all available metadata fields.
-
-### Agentic (`src/examples/agentic/`)
-
-An agent-based evaluation where the model uses `bash()` and `python()` tools
-in a Docker sandbox via `basic_agent()`. Demonstrates sandbox configuration
-and tool-use scoring. Similar to evaluations like GAIA.
-
-For more examples of production evaluations, see the
-[inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals) registry,
-which contains reference implementations of benchmarks like GPQA, GAIA,
-HumanEval, and many others.
-
-## Skills
-
-The `.claude/skills/` directory ships Claude Code skills that activate when
-you ask Claude to perform the matching task — e.g. "create a new evaluation"
-or "review this PR against the template standards". They are managed files,
-kept up to date by `sync-template.yml`. The reliable way to invoke one is
-*"Please run the /SKILL_NAME skill on EVAL_NAME."*
-
-### Authoring
-
-- **create-eval** — implement a new evaluation from an issue, paper, or
-  benchmark spec, with checkpoints between phases.
-- **investigate-dataset** — explore HuggingFace, CSV, or JSON datasets to
-  understand their structure and data quality.
-- **ensure-test-coverage** — review existing tests or create missing ones for
-  a single evaluation against repo conventions.
-
-### Reviewing
-
-- **eval-quality-workflow** — fix or review a single evaluation against the
-  standards in [EVALUATION_CHECKLIST.md](EVALUATION_CHECKLIST.md).
-- **eval-validity-review** — assess whether an evaluation accurately measures
-  what it claims to measure and has good methodological standards.
-- **review-pr-workflow** — review a PR against the agent-checkable standards
-  in `EVALUATION_CHECKLIST.md` and `BEST_PRACTICES.md`; designed to run in CI.
-
-### Running and analysing
-
-- **eval-report-workflow** — produce a README results table by selecting
-  models, estimating costs, and running evaluations.
-- **read-eval-logs** — view and analyse Inspect `.eval` log files via the
-  Python API and CLI.
-- **check-trajectories-workflow** — use Inspect Scout to scan agent
-  trajectories for failures, formatting issues, reward hacking, and refusals.
-
-### Submission
-
-- **prepare-submission-workflow** — finalize an evaluation for PR submission
-  (dependencies, tests, lint, `eval.yaml`, README).
-
-## Features
-
-- **Multiple evaluation support** — add as many evaluations as needed, each
-  with its own directory, tests, and metadata
-- **Automated quality checks** — pre-commit hooks and CI for ruff, mypy,
-  and pytest
-- **Managed file sync** — template updates are synced automatically via
-  GitHub Actions with three-way merging to preserve your customizations
-  (see [MANAGED_FILES.md](MANAGED_FILES.md))
-
-## CI workflows
-
-The template includes several GitHub Actions workflows that run
-automatically.
-
-### Standard checks (always active)
-
-- **Checks** (`checks.yml`) — runs ruff, mypy, POSIX code check,
-  unlisted-eval check, package build, autolint, generated-docs check,
-  and large-file scan on every push and PR. Each check is individually
-  enforceable — see [Checks and enforcement](#checks-and-enforcement).
-- **Markdown Lint** (`markdown-lint.yml`) — lints markdown files on PRs
-- **PR Template Check** (`pr-template-check.yml`) — verifies PR body
-  contains the required checklist
-- **Sync Template** (`sync-template.yml`) — weekly sync of managed files
-  from the upstream template (skips inactive repos)
-- **Sync Upstream** (`sync-upstream.yml`) — weekly sync of managed files
-  from [inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals)
-
-### Repository settings for sync workflows
-
-The sync workflows create branches and open PRs automatically. Two
-things need to be set up in your repository for this to work:
-
-#### 1. Workflow permissions and PR creation
-
-1. Go to **Settings > Actions > General > Workflow permissions**
-2. Select **Read and write permissions**
-3. Check **Allow GitHub Actions to create and approve pull requests**
-
-#### 2. `SYNC_PAT` secret
-
-Sync runs often include changes to files under `.github/workflows/`
-(template-managed workflow files). GitHub blocks the default
-`GITHUB_TOKEN` from creating or updating workflow files, so the sync
-needs a separate token with the `Workflows` permission. Without it,
-the sync run fails on push with `refusing to allow a GitHub App to
-create or update workflow … without 'workflows' permission`.
-
-To set it up:
-
-1. At github.com → Settings → Developer settings → Personal access
-   tokens → Fine-grained tokens, generate a new token. Set
-   **Resource owner** to your org, **Repository access** to this
-   repo, and **Repository permissions** to: Contents = Read and
-   write, Pull requests = Read and write, Workflows = Read and write
-   (Metadata = Read is added automatically).
-2. If your org requires admin approval for fine-grained PATs,
-   approve it on the org's PAT page.
-3. Add the token as a repository secret named `SYNC_PAT` (Settings >
-   Secrets and variables > Actions > New repository secret).
-
-See [MANAGED_FILES.md](MANAGED_FILES.md) for details on which files are
-synced and how the three-way merge preserves your customizations.
-
-### Claude-powered workflows
-
-These workflows use Claude to automate code review and issue resolution.
-To enable them, add one of these secrets to your repository settings
-(Settings > Secrets and variables > Actions > Secrets):
-
-- **`ANTHROPIC_API_KEY`** — an Anthropic API key (recommended for most
-  users). Create one at <https://console.anthropic.com/settings/keys>.
-- **`ANTHROPIC_ROLE_ARN`** — an AWS IAM role ARN for Bedrock access via
-  OIDC (for organisations using AWS Bedrock).
-
-Without either secret, the workflow is skipped.
-
-At time of writing, each Claude review costs roughly **$0.50–$2** using
-Claude Opus 4.6 ($5/$25 per million tokens input/output).
-
-- **Claude Code Review** (`claude-review.yaml`) — reviews PRs against
-  the evaluation standards in EVALUATION_CHECKLIST.md and
-  BEST_PRACTICES.md.
-
-  Three modes, controlled by repository variables (Settings > Variables
-  > Actions):
-
-  1. **Disabled** (default if no secret is set) — workflow skips
-     entirely.
-  2. **On-demand only** (`AUTO_REVIEW_ALL_COMMITS` unset or `false`) —
-     review fires only when someone comments `/review` on a PR or
-     dispatches the workflow manually. Recommended starting point.
-  3. **Every commit** (`AUTO_REVIEW_ALL_COMMITS=true`) — review fires
-     on every push to a non-draft PR. Highest cost; use when the team
-     wants a review on each iteration.
-
-  Optional `CLAUDE_MODEL` repository variable overrides the model
-  (defaults to `claude-opus-4-6-20250725` for API key users).
-
-## Checks and enforcement
-
-This template is calibrated against the
-[inspect_evals](https://github.com/UKGovernmentBEIS/inspect_evals) registry's
-quality standards. Those standards are **recommended, not required** in the
-template — meeting them is what we suggest if you want a smooth path to
-registry submission, but the template doesn't block your work if you don't.
-
-Each check has an `ENFORCE_<NAME>` setting in
-[`tools/enforcement.config`](tools/enforcement.config). When
-`ENFORCE_<NAME>=true`, the check blocks merge on failure. When `=false`, it
-reports as advisory in the PR (visible in the run logs but doesn't prevent
-merging). To change enforcement for your repo, edit that file and commit —
-the change is git-tracked and reviewable.
-
-The same file is honoured locally by `make check` (which runs
-`tools/run_checks.sh`): advisory failures are reported with a `⚠` and a
-"not enforced" note; only enforced failures cause `make check` to exit
-non-zero. Environment variables override the file for one-off local runs:
+First, install dependencies:
 
 ```bash
-ENFORCE_AUTOLINT=true bash tools/run_checks.sh
+uv sync
 ```
 
-All toggles live in [`tools/enforcement.config`](tools/enforcement.config) — edit and commit to change behaviour for your fork. The defaults committed there are:
+Then run evaluations:
 
-**Default-enforced** (blocking unless `ENFORCE_<NAME>=false`):
+```bash
+uv run inspect eval chipbench/chipbench_verilog_gen --model openai/gpt-5-nano
+uv run inspect eval chipbench/chipbench_debug --model openai/gpt-5-nano
+uv run inspect eval chipbench/chipbench_refmodel --model openai/gpt-5-nano
+```
 
-- `ENFORCE_RUFF` — Ruff format + lint
-- `ENFORCE_MYPY` — Mypy static types
-- `ENFORCE_POSIX_CHECK` — POSIX-only Python idioms (`tools/check_posix_code.py`)
-- `ENFORCE_UV_LOCK` — `uv.lock` in sync with `pyproject.toml`
-- `ENFORCE_UNLISTED_EVALS` — eval directories must be registered in
-  `pyproject.toml` entry-points and have an `eval.yaml`
-- `ENFORCE_PACKAGE` — package builds and inspects cleanly
+You can also import tasks as Python objects:
 
-**Default-advisory** (reported but non-blocking unless `ENFORCE_<NAME>=true`):
+```python
+from inspect_ai import eval
+from chipbench import chipbench_verilog_gen, chipbench_debug, chipbench_refmodel
+eval(chipbench_verilog_gen)
+```
 
-- `ENFORCE_AUTOLINT` — inspect_evals structural standards (eval.yaml schema,
-  README sections, test patterns, etc.) via `tools/run_autolint.py`
-- `ENFORCE_GENERATED_DOCS` — auto-generated README sections committed
-- `ENFORCE_MARKDOWN_LINT` — markdown style (`.markdownlint.yaml`)
-- `ENFORCE_LARGE_FILES` — no files >10MB
-- `ENFORCE_PR_TEMPLATE` — PR body contains the template checklist
+After running evaluations, view logs with:
 
-### Quick recipes
+```bash
+uv run inspect view
+```
 
-- **Strict mode (registry-ready)**: set every `ENFORCE_*` to `true`. Your
-  PRs now fail on the same standards inspect_evals applies.
-- **Loose mode (default)**: leave everything unset. Correctness blocks
-  (Ruff/Mypy/POSIX/lock/registration/build); style and structure are
-  advisory.
-- **Per-check**: set just the toggles you want — e.g.
-  `ENFORCE_AUTOLINT=true` if you want eval-structure rules enforced but
-  don't care about markdown style.
+If you don't want to specify `--model` each time, create a `.env` file:
 
-To opt out of a default-enforced check, set its variable to `false`. To opt
-into a default-advisory check, set its variable to `true`.
+```bash
+INSPECT_EVAL_MODEL=anthropic/claude-opus-4-1-20250805
+ANTHROPIC_API_KEY=<anthropic-api-key>
+```
+<!-- /Usage: Automatically Generated -->
 
-## Documentation
+<!-- Options: Automatically Generated -->
+## Options
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — development setup, testing, and
-  submission guidelines.
-- [BEST_PRACTICES.md](BEST_PRACTICES.md) — evaluation design best practices
-  (synced from `inspect_evals`).
-- [EVALUATION_CHECKLIST.md](EVALUATION_CHECKLIST.md) — quality checklist used
-  when reviewing evaluations (synced from `inspect_evals`).
-- [AUTOMATED_CHECKS.md](AUTOMATED_CHECKS.md) — what `tools/run_autolint.py`
-  checks, and how to suppress individual rules.
-- [TASK_VERSIONING.md](TASK_VERSIONING.md) — when to bump an eval's `task`
-  version.
-- [AGENTS.md](AGENTS.md) — repo-wide tips for coding agents and pointers to
-  the skills above.
-- [MANAGED_FILES.md](MANAGED_FILES.md) — which files in this repo are
-  template-managed vs. user-owned, and how the sync preserves customizations.
-- [CLAUDE.md](CLAUDE.md) — project-level instructions Claude Code reads on
-  every session in this repo.
+You can control a variety of options from the command line. For example:
+
+```bash
+uv run inspect eval chipbench/chipbench_verilog_gen --limit 10
+uv run inspect eval chipbench/chipbench_debug --max-connections 10
+uv run inspect eval chipbench/chipbench_refmodel --temperature 0.5
+```
+
+See `uv run inspect eval --help` for all available options.
+<!-- /Options: Automatically Generated -->
+
+<!-- Parameters: Automatically Generated -->
+## Parameters
+
+### `chipbench_verilog_gen`
+
+- `category` (Optional[Literal['self_contained', 'not_self_contained', 'cpu_ip']]): Restrict to one problem category ("self_contained", "not_self_contained", or "cpu_ip"). If None, includes all three. (default: `None`)
+
+### `chipbench_debug`
+
+- `shot` (Optional[Literal['zero_shot', 'one_shot']]): Restrict to "zero_shot" (module description + buggy code only) or "one_shot" (also includes a waveform dump). If None, includes both. (default: `None`)
+- `bug_type` (Optional[Literal['arithmetic', 'assignment', 'state_machine', 'timing']]): Restrict to one bug type ("arithmetic", "assignment", "state_machine", or "timing"). If None, includes all four. (default: `None`)
+
+### `chipbench_refmodel`
+
+- `language` (Optional[Literal['python', 'cxxrtl']]): Restrict to one target language ("python" or "cxxrtl"). If None, includes both. SystemC is part of the original benchmark but is excluded here — see prompts.py for why. (default: `None`)
+- `cxxrtl_prompt_variant` (Literal['default', 'fixed']): "default" (vendored as-is) or "fixed" (a corrected CXXRTL API for A/B-testing against the default — see README.md's Evaluation Report for why the default fails to compile against the pinned Yosys version). Defaults to "default", unlike stage_missing_defines below, because whether the corrected prompt actually changes model behavior is itself an open question worth measuring against the paper's original — not a harness bug where "fixed" is simply the correct behavior. (default: `'default'`)
+- `stage_missing_defines` (bool): whether to apply Bug 5's fix (inject `` `define `` macros ref.sv needs but doesn't itself define). Defaults to True, unlike cxxrtl_prompt_variant above, because this is a straightforward harness gap (the official pipeline never needed this staging since it compiles ref.sv/test.sv together) rather than a substantive A/B question; set False to reproduce the paper's original ref.sv/test.sv split for a before/after comparison. (default: `True`)
+
+<!-- /Parameters: Automatically Generated -->
+
+## Dataset
+
+The dataset is vendored locally under `data/` from the official
+[ChipBench repository](https://github.com/zhongkaiyu/ChipBench) (MIT
+licensed), not re-hosted on HuggingFace.
+
+- **Verilog Gen** (45 problems: 30 self-contained + 6 not-self-contained + 9
+  CPU-IP design modules): each problem is a `{prompt.txt, ref.sv, test.sv}`
+  triplet. `prompt.txt` describes the interface and behavior of a module the
+  model must implement as `module TopModule(...)`; `ref.sv` is the golden
+  `module RefModule(...)` implementation. This is one more sample than the
+  paper's reported 44 — the vendored dataset has gained one additional
+  self-contained problem since the paper's Table 7 snapshot.
+- **Verilog Debugging** (178 = 89 bug cases x 2 shot modes): `prompt.txt`
+  contains the module description plus a buggy `TopModule` with one of four
+  injected bug types (arithmetic, assignment, timing, state machine). In
+  `one_shot` variants, a waveform (`.vcd`) dump is statically appended to the
+  prompt (no simulation is run to produce it — it's baked into the vendored
+  data); `zero_shot` omits it.
+- **Reference Model Generation** (88 = 44 problems x 2 languages): **not**
+  read from the vendored `ref_model_gen/` folder, which is a separate
+  training-data-generation tool built on an unrelated corpus, not the
+  paper's benchmark. Instead, each Verilog Gen problem's own spec is paired
+  with the vendored `gen_{python,cxxrtl}_prompt.txt` system-prompt template
+  to construct one sample per language — except `Prob000_Four-to-one_multiplexer`,
+  excluded due to a self-contradictory prompt (see Known Limitations below).
+  SystemC is part of the original paper's benchmark (44x3=132) but is
+  excluded here: the vendored verification toolbox (`Tool_Box/crosslang_verify`)
+  has no working SystemC path — `dut_systemc_file` is declared but never
+  implemented.
+
+Example (`chipbench_verilog_gen`, `self_contained/Prob001_continuous_input_sequence_detect`):
+
+```text
+Input: "I would like you to implement a module named `TopModule` with the
+        following interface... The module should implement an 8-bit shift
+        register that shifts in the input `a`... The output `match` should
+        be asserted whenever the shift register matches 8'b0111_0001..."
+Files: ref.sv (golden `module RefModule`), test.sv (testbench)
+```
+
+## Scoring
+
+- **`chipbench_verilog_gen` / `chipbench_debug`**: the model's Verilog is
+  written as `generated.sv` inside the sandbox and compiled together with
+  the sample's `test.sv` and `ref.sv` using Icarus Verilog
+  (`iverilog -g2012 test.sv ref.sv generated.sv`); the resulting simulation
+  is run with `vvp` and its `Mismatches: X in Y samples` output line is
+  parsed. The sample scores correct iff `X == 0`; a missing line (crash,
+  hang, or timeout) scores incorrect rather than being treated as a pass.
+- **`chipbench_refmodel`**: the model's Python or C++ (CXXRTL) code is
+  written into the sandbox and verified with the vendored
+  `Tool_Box/crosslang_verify/main.py`, which compiles the golden `ref.sv`
+  with Verilator, drives 1000+ random stimuli, and diffs outputs against the
+  submitted reference model.
+- Metrics: `pass@1`, `pass@5`, `pass@10`, computed via Inspect's built-in
+  `pass_at_k` epoch reducer with 20 completions per sample (matching the
+  ChipBench authors' own harness default, `configure.ac`'s `--with-samples`
+  default of 20), at `temperature=0.85`, `top_p=0.95` (the VerilogEval
+  convention the paper uses for all model evaluations).
+
+## Evaluation Report
+
+*Results produced July 2026. Eval version `2-B` (the Verilator fix in `3-B` postdates these
+results — see "Known limitations" below). All runs via OpenRouter
+(`openrouter/meta-llama/llama-3.1-8b-instruct`,
+`openrouter/deepseek/deepseek-r1`, `openrouter/openai/gpt-3.5-turbo`).*
+
+### Implementation details
+
+**Deviations from the reference implementation:**
+
+- **Single-shot generation only.** The paper's own `ref_model_gen/gen.py` supports iterative
+  fixing (`--turns 3`, i.e. the model gets to see its own compile/test errors and retry). This
+  implementation uses Inspect's plain `generate()` — one completion per attempt, no retry loop —
+  for all three tasks, matching Inspect's standard task-design conventions rather than the paper's
+  bespoke script.
+- **SystemC excluded.** The paper's reference-model task covers three target languages (Python,
+  CXXRTL, SystemC); SystemC is dropped here because the vendored `crosslang_verify` toolbox has no
+  working SystemC verification path.
+- **45 vs. 44 `verilog_gen` problems.** The vendored dataset has gained one problem
+  (`Prob000_Four-to-one_multiplexer`) since the paper's own snapshot (its Table 7 appendix lists
+  44). `chipbench_refmodel` excludes this same problem for an unrelated reason (a
+  self-contradictory prompt, see Known Limitations below), so it happens to match the paper's
+  count of 44 problems (88 samples across 2 languages) — coincidentally, not because the exclusion
+  was chosen to match. `chipbench_debug`'s 178 problems match the paper's 89×2-shot count exactly.
+- **`chipbench_refmodel`'s dataset is constructed, not read off disk.** The paper never ships a
+  runnable refmodel dataset directory; this implementation builds one at runtime from the
+  `verilog_gen` problem set (prompt + expected Verilog reference), reusing the paper's own
+  `gen_python_prompt.txt`/`gen_cxxrtl_prompt.txt` system prompts.
+- **A corrected CXXRTL prompt is available as an opt-in variant.** The vendored
+  `gen_cxxrtl_prompt.txt` teaches a CXXRTL C++ API (`override`-based `eval()`, zero-arg `commit()`)
+  that doesn't match the pinned Yosys v0.60 toolchain's actual generated header — every CXXRTL
+  attempt fails to compile regardless of model quality. `cxxrtl_prompt_variant="fixed"` swaps in a
+  corrected prompt verified directly against Yosys v0.60's `cxxrtl.h`; `"default"` (the paper's
+  original, unmodified) remains the parameter default for reproduction fidelity. All CXXRTL results
+  below use `"fixed"` unless noted, since the default variant cannot meaningfully measure model
+  capability (83% of samples fail identically on this signature).
+
+**Known limitations and edge cases:**
+
+- **No pre-built Docker image is published — the sandbox builds locally on first use.** This
+  eval compiles Icarus Verilog, Yosys/CXXRTL, and Verilator from source rather than using
+  prebuilt packages, since the versions available via `apt` are too old for
+  `crosslang_verify`'s generated testbenches. A cold build takes up to ~10 minutes (observed
+  range in practice: 4.5–6 minutes with a warm Docker layer cache cleared, longer on a slower
+  connection); every run after that hits Docker's layer cache and starts in a few seconds,
+  unless the Dockerfile or `Tool_Box/crosslang_verify/` changes. This is a deliberate tradeoff,
+  not an oversight — requesting a pre-built, GHCR-published image (per `CONTRIBUTING.md`'s
+  Docker Images section) is possible if the one-time cold-build cost becomes a problem for
+  contributors running this eval repeatedly, but requires maintainer-side GHCR/CI setup, so it's
+  left as self-built for now.
+- **`Prob000_Four-to-one_multiplexer` is excluded from `chipbench_refmodel`.** Its prompt, reused
+  verbatim from `verilog_gen`, contradicts the refmodel system prompt prepended to it: the final
+  line reads "Write the **Verilog code** for this 4-to-1 multiplexer..." while the CXXRTL/Python
+  system prompt says "Do NOT include Verilog." Found via an automated Inspect Scout trajectory
+  scan (`/check-trajectories-workflow`, 100-sample subset of a CXXRTL run) — the scan's
+  `broken_env` scanner flagged it independently of any compile-time signature, not the
+  regex-based failure classifier used elsewhere in this document. Confirmed to be the paper's own
+  unmodified data (byte-identical `diff` against the vendored mirror), and — consistent with this
+  specific problem already being identified elsewhere in this document as the one addition to the
+  vendored dataset absent from the paper's own Table 7 — the only one of all 45 `verilog_gen`
+  prompts with this issue (`grep`-confirmed: none of the other 44 end with an explicit "Verilog
+  code" instruction). Per `CONTRIBUTING.md`'s Data Quality guidance for a broken dataset record,
+  this problem is now filtered out of `chipbench_refmodel` (dropping it from 90 to 88 samples;
+  `chipbench_verilog_gen` and `chipbench_debug` are unaffected, since the prompt is entirely
+  correct there — "write Verilog code" is exactly what's wanted). Note this is present in the
+  official ChipBench repo, not something we added — but excluding it from `chipbench_refmodel`
+  has a second benefit beyond fixing the contradiction: it brings the sample count to exactly the
+  paper's own 44 problems, making the ours-vs-paper comparison in Table 3 below an apples-to-apples
+  44-vs-44 rather than an incidental 45-vs-44. The underlying eval runs still
+  cover all 45 problems (a re-run wasn't needed), but the `chipbench_refmodel` pass-rate tables
+  below are recomputed to exclude this one problem's samples from the aggregate — see the `4-B`
+  changelog entry for how.
+- **GPT-3.5 Turbo cannot run `chipbench_debug`'s one-shot variant on every problem.** Its
+  16,385-token context window is sometimes exceeded once a full VCD waveform trace is appended to
+  the prompt — a model limitation, not a task-design or harness bug. GPT-3.5 results below cover
+  zero-shot only for this reason.
+- **DeepSeek R1 and GPT-3.5 Turbo were run at a reduced 10 epochs** (rather than the paper's
+  default 20) to manage cost and Docker sandbox load at this dataset scale; `pass_at_10` is exact
+  at `epochs=10` (its `epochs >= k` requirement is met), but `pass_at_5`'s combinatorial average has
+  fewer terms to draw from than the `epochs=20` runs, so its stderr is comparably larger.
+- **Six infrastructure bugs were found and fixed during development of this implementation**
+  (an outdated CXXRTL prompt API; missing submodule staging for `not_self_contained` refmodel
+  problems; a harness testbench referencing a clock signal for combinational circuits; missing
+  macro-definition staging; a vendored port-extraction script that both loses module boundaries
+  and mis-parses parametrized bit-widths; and a Verilator strictness gap on one problem's golden
+  reference, described below). All are confirmed fixed by a regression test, and the first five are
+  additionally confirmed at full dataset scale — the fix is confirmed to generalize: a second model
+  (GPT-3.5 Turbo) run against the fully-fixed pipeline in both refmodel languages shows the identical
+  clean signature as the model used to find and fix the bugs (Llama 3.1 8B), not just an artifact of
+  one model's specific failure patterns.
+- **The Verilator strictness gap (`Prob006_cpu_top`) is fixed but not yet reconfirmed at full
+  dataset scale.** `Prob006_cpu_top`'s golden reference mixes blocking/non-blocking assignments to
+  the same packed variable across `always` blocks — a pattern Icarus Verilog (`verilog_gen`/`debug`)
+  accepts but Verilator (`refmodel`) used to reject outright (`%Error-BLKANDNBLK`), blocking 100% of
+  `not_self_contained` refmodel attempts on this problem in both languages regardless of model
+  output. Confirmed to be the paper's own unmodified data (byte-identical `diff`), not a
+  dataset-construction issue. Fixed by adding `-Wno-BLKANDNBLK` to `run_verification.py`'s
+  `VERILATOR_WARNS` — this only waives Verilator's lint objection to the construct, it doesn't
+  change which scheduling Verilator itself elaborates it with, and since `chipbench_refmodel` has no
+  other ground truth to compare against, Verilator's own interpretation *is* the golden reference
+  regardless. Confirmed via a deterministic e2e regression test
+  (`test_refmodel_blkandnblk_waiver_e2e`) against the rebuilt Docker image (this file is baked in via
+  `COPY`). **The pass-rate tables below predate this fix** — a fresh full-scale run would be expected
+  to show `not_self_contained` refmodel numbers improve further, since this was the sole remaining
+  cause of its non-zero pipeline-failure share in both languages.
+
+### Results
+
+Each task below leads with a compact summary (accuracy = pass@1, the full dataset run in every
+case) before the detailed per-category breakdown and paper comparison — the summary is for a
+quick read, the breakdown is what actually supports the comparison-to-paper claims.
+
+#### `chipbench_verilog_gen`
+
+| Model | Provider | Accuracy | Stderr | Time |
+| ----- | -------- | -------- | ------ | ---- |
+| Llama 3.1 8B | Meta | 0.044 | 0.019 | 2h04m |
+| DeepSeek R1 (10 epochs) | DeepSeek | 0.271 | 0.056 | 12h22m* |
+| GPT-3.5 Turbo (10 epochs) | OpenAI | 0.184 | 0.052 | 13m |
+
+*\*DeepSeek R1's wall-clock includes the local machine idling overnight mid-run; actual active
+compute time was closer to 4h22m.*
+
+**Notes:**
+
+- Paper baseline (Table 2, same three models): Llama 3.1 8B 7.0%, DeepSeek R1 23.7%, GPT-3.5
+  Turbo 8.15% pass@1.
+- All three models completed successfully (900/900, 450/450, 450/450 samples respectively).
+
+vs. paper Table 2, full pass@1/5/10:
+
+| Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
+|---|---|---|---|
+| Llama 3.1 8B | 4.44(1.94)% / 7.0% | 11.3(4.15)% / 8.2% | 14.3(4.86)% / 9.3% |
+| DeepSeek R1 (10 epochs) | 27.1(5.63)% / 23.7% | 40.6(7.20)% / 33.7% | 42.2(7.45)% / 38.2% |
+| GPT-3.5 Turbo (10 epochs) | 18.4(5.18)% / 8.15% | 24.2(6.42)% / 12.59% | 24.4(6.48)% / 12.59% |
+
+Non-self-contained (hierarchical) designs reproduce the paper's specific finding of a **flat 0%
+pass rate across all three models** exactly. Self-contained modules track the same order of
+magnitude for every model. CPU IP components consistently score higher in our runs than the
+paper's, for all three models — the one discrepancy here that looks structural rather than
+incidental (see below).
+
+#### `chipbench_debug`
+
+| Model | Provider | Accuracy | Stderr | Time |
+| ----- | -------- | -------- | ------ | ---- |
+| Llama 3.1 8B (zero-shot) | Meta | 0.074 | 0.016 | 1h49m |
+| GPT-3.5 Turbo (zero-shot, 10 epochs) | OpenAI | 0.211 | 0.035 | 27m |
+
+**Notes:**
+
+- Paper baseline (Table 4, treated as a zero-shot proxy — the paper doesn't state which shot
+  mode Table 4 reports): Llama 3.1 8B 7.77%, GPT-3.5 Turbo 10.0% pass@1.
+- Both models completed successfully (3,560/3,560 and 890/890 samples). GPT-3.5's one-shot
+  variant was not run at scale — see "Known limitations" above.
+
+vs. paper Table 4, full pass@1/5/10 (zero-shot; see caveat above):
+
+| Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
+|---|---|---|---|
+| Llama 3.1 8B (89 problems, 20 epochs) | 7.36(1.58)% / 7.77% | 21.1(3.37)% / 14.7% | 29.6(4.12)% / 22.9% |
+| GPT-3.5 Turbo (89 problems, 10 epochs) | 21.1(3.51)% / 10.0% | 34.2(4.84)% / 21.25% | 37.1(5.15)% / 26.25% |
+
+Llama 3.1 8B was also run one-shot (same 89 problems, plus a VCD waveform trace) to check the
+paper's own "mixed performance" finding on waveform-aware debugging: one-shot was a modest net
+improvement in aggregate (7.36%→7.98% pass@1), but with a genuine per-bug-type split — Arithmetic,
+Assignment, and Timing all improved while State machine got worse — echoing the paper's own mixed
+result rather than contradicting it.
+
+#### `chipbench_refmodel`
+
+| Model | Provider | Accuracy | Stderr | Time |
+| ----- | -------- | -------- | ------ | ---- |
+| Llama 3.1 8B, CXXRTL | Meta | 0.045 | 0.021 | 35m |
+| Llama 3.1 8B, Python | Meta | 0.122 | 0.038 | 25m |
+| GPT-3.5 Turbo, CXXRTL (10 epochs) | OpenAI | 0.068 | 0.029 | 12m |
+| GPT-3.5 Turbo, Python (10 epochs) | OpenAI | 0.182 | 0.052 | 11m |
+
+**Notes:**
+
+- Paper baseline (Table 3, Python only — see below): Llama 3.1 8B 2.22%, GPT-3.5 Turbo 5.56%
+  pass@1. No published baseline exists for CXXRTL.
+- All four runs completed successfully (900/900 and 450/450 samples respectively), against the
+  pre-`4-B` 45-problem dataset. Figures in this table and the one below are recomputed to exclude
+  `Prob000_Four-to-one_multiplexer` (see the `4-B` changelog entry) from the already-collected
+  per-sample results — a re-run wasn't needed since each sample was scored independently; only the
+  aggregate pass@1/5/10 and stderr were recomputed over the remaining 44 problems, reimplementing
+  Inspect's own `pass_at_k` reducer and `accuracy`/`stderr` metrics
+  (`inspect_ai.scorer._reducer.reducer.pass_at`, `inspect_ai.scorer._metrics`) applied to the
+  filtered sample set. The 45-problem originals are 0.046/0.128/0.067/0.200 respectively (CXXRTL,
+  Python, CXXRTL, Python order above).
+
+vs. paper Table 3 (Python only; no published CXXRTL/SystemC numbers exist), full pass@1/5/10:
+
+| Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
+|---|---|---|---|
+| Llama 3.1 8B, Python | 12.2(3.82)% / 2.22% | 23.1(5.74)% / 5.56% | 27.7(6.36)% / 6.67% |
+| GPT-3.5 Turbo, Python (10 epochs) | 18.2(5.24)% / 5.56% | 24.4(6.47)% / 6.67% | 25.0(6.60)% / 7.78% |
+| Llama 3.1 8B, CXXRTL | 4.5(2.07)% | 11.0(4.11)% | 14.3(4.85)% |
+| GPT-3.5 Turbo, CXXRTL (10 epochs) | 6.8(2.87)% | 14.2(4.83)% | 18.2(5.88)% |
+
+CXXRTL has no published comparison to make — the paper reports Table 3 for Python only, despite
+CXXRTL being part of its stated three-language methodology (44×3=132 samples).
+
+The most notable finding here: **the paper reports a flat 0% on both `non_self_contained` and
+`cpu_ip`, for every model in Table 3 including both Llama 3.1 8B and GPT-3.5 Turbo** — while our
+fixed harness scores well above 0% on both categories, for both models (e.g. CPU IP: Llama
+17.8→44.4%, GPT-3.5 34.4→44.4% across pass@1→10). Since this implementation independently found
+and fixed a missing-submodule-staging bug that would produce exactly this symptom (100% blocked
+regardless of model quality) in its own port — and the paper never shipped its original harness for
+direct comparison — the most likely explanation is that the paper's own tooling has an equivalent,
+unfixed bug, not that these categories are universally unsolvable. This is circumstantial (the
+paper's original code isn't available to test directly) but is now backed by two independent models
+both hitting exactly 0% on exactly the two categories a missing-submodule-staging bug would block.
+
+### Reproducibility information
+
+| Task | Model | Samples run / total | Epochs |
+|---|---|---|---|
+| `chipbench_verilog_gen` | Llama 3.1 8B | 900 / 900 | 20 |
+| `chipbench_verilog_gen` | DeepSeek R1 | 450 / 450 | 10 |
+| `chipbench_verilog_gen` | GPT-3.5 Turbo | 450 / 450 | 10 |
+| `chipbench_debug` | Llama 3.1 8B | 3,560 / 3,560 | 20 |
+| `chipbench_debug` | GPT-3.5 Turbo (zero-shot only) | 890 / 890 | 10 |
+| `chipbench_refmodel` | Llama 3.1 8B (Python + CXXRTL) | 1,800 / 1,800 | 20 |
+| `chipbench_refmodel` | GPT-3.5 Turbo (Python + CXXRTL) | 900 / 900 | 10 |
+
+The `chipbench_refmodel` totals above (1,800 and 900) predate the `4-B` exclusion of
+`Prob000_Four-to-one_multiplexer`; a fresh run against the current dataset would total 1,760 and
+880 respectively (44 problems × 2 languages × epochs).
+
+Commands used:
+
+```bash
+# verilog_gen
+uv run inspect eval src/chipbench/chipbench.py@chipbench_verilog_gen \
+  --model openrouter/meta-llama/llama-3.1-8b-instruct
+uv run inspect eval src/chipbench/chipbench.py@chipbench_verilog_gen \
+  --model openrouter/deepseek/deepseek-r1 --epochs 10
+uv run inspect eval src/chipbench/chipbench.py@chipbench_verilog_gen \
+  --model openrouter/openai/gpt-3.5-turbo --epochs 10
+
+# debug
+uv run inspect eval src/chipbench/chipbench.py@chipbench_debug \
+  --model openrouter/meta-llama/llama-3.1-8b-instruct
+uv run inspect eval src/chipbench/chipbench.py@chipbench_debug \
+  -T shot=zero_shot --model openrouter/openai/gpt-3.5-turbo --epochs 10
+
+# refmodel
+uv run inspect eval src/chipbench/chipbench.py@chipbench_refmodel \
+  -T language=cxxrtl -T cxxrtl_prompt_variant=fixed \
+  --model openrouter/meta-llama/llama-3.1-8b-instruct
+uv run inspect eval src/chipbench/chipbench.py@chipbench_refmodel \
+  -T language=python --model openrouter/meta-llama/llama-3.1-8b-instruct
+uv run inspect eval src/chipbench/chipbench.py@chipbench_refmodel \
+  -T language=cxxrtl -T cxxrtl_prompt_variant=fixed \
+  --model openrouter/openai/gpt-3.5-turbo --epochs 10
+uv run inspect eval src/chipbench/chipbench.py@chipbench_refmodel \
+  -T language=python --model openrouter/openai/gpt-3.5-turbo --epochs 10
+```
+
+`--epochs 10` for DeepSeek R1 and GPT-3.5 Turbo, and `-T shot=zero_shot` for GPT-3.5's debug run,
+are both justified above under "Known limitations." All other parameters use task defaults.
+
+## Changelog
+
+### `4-B` (July 2026)
+
+`Prob000_Four-to-one_multiplexer` excluded from `chipbench_refmodel`'s dataset: its prompt
+(reused verbatim from `verilog_gen`) tells the model to write Verilog code, contradicting the
+refmodel system prompt's "do NOT include Verilog" instruction — a genuine, if narrow, broken
+dataset record (see Known Limitations above), handled per `CONTRIBUTING.md`'s Data Quality
+guidance. `chipbench_refmodel` drops from 90 to 88 samples; `chipbench_verilog_gen` and
+`chipbench_debug` are unaffected. Bumped `N` (dataset change affecting comparability); no
+interface change, so `X` is unchanged.
+
+The four existing `chipbench_refmodel` evaluation runs (Llama 3.1 8B and GPT-3.5 Turbo, Python and
+CXXRTL) were not re-run — each sample was already scored independently, so `Prob000`'s per-epoch
+scores could simply be dropped from the aggregate. The Results tables above are recomputed directly
+from the existing `.eval` logs' per-sample-epoch scores, reimplementing Inspect's own `pass_at_k`
+reducer (`inspect_ai.scorer._reducer.reducer.pass_at`: `1 - C(n-c,k)/C(n,k)` per sample) and its
+`accuracy`/`stderr` metrics (`inspect_ai.scorer._metrics`: mean and `std(ddof=1)/sqrt(n)` across the
+remaining 44 samples) over the filtered sample set. The recomputed "before" values (all 45 problems)
+matched the previously-published `3-B` numbers exactly, confirming the recomputation is correct.
+
+### `3-B` (July 2026)
+
+A sixth infrastructure bug, found while working through `EVALUATION_CHECKLIST.md`'s Dataset
+Validity check ("is it reasonably possible for a model to succeed at each sample?"): Verilator
+rejected `Prob006_cpu_top`'s golden reference outright (`%Error-BLKANDNBLK`), blocking 100% of
+`not_self_contained` refmodel attempts on that problem in both languages regardless of model
+output. Fixed by adding `-Wno-BLKANDNBLK` to the vendored `run_verification.py`'s
+`VERILATOR_WARNS`. Bumped `N` (scoring-affecting fix); no interface change, so `X` is unchanged.
+
+### `2-B` (July 2026)
+
+Five infrastructure bugs affecting `chipbench_refmodel` scoring were found and fixed (see
+Evaluation Report above for details): an outdated CXXRTL prompt API, missing submodule staging for
+`not_self_contained` problems, an unconditional clock reference in the generated testbench, missing
+macro-definition staging, and a vendored port-extraction script that lost module boundaries and
+mis-parsed parametrized bit-widths. Bumped `N` since these fixes materially change scoring results
+for previously-run samples.
+
+Two new optional parameters added to `chipbench_refmodel` (`X` bump, backward-compatible — both
+default to preserving prior behavior):
+
+- `cxxrtl_prompt_variant: Literal["default", "fixed"] = "default"` — `"fixed"` swaps in a corrected
+  CXXRTL prompt (see above); `"default"` keeps the original vendored prompt.
+- `stage_missing_defines: bool = True` — whether to inject `` `define `` macros a problem's `ref.sv`
+  needs but doesn't itself define. Defaults to `True` (the fix applied); `False` reproduces the
+  original, unfixed behavior for controlled before/after comparisons.
+
+### `1-A` (initial release)
+
+Initial implementation of all three ChipBench tasks.
