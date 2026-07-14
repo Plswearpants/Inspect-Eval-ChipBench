@@ -76,8 +76,8 @@ See `uv run inspect eval --help` for all available options.
 ### `chipbench_refmodel`
 
 - `language` (Optional[Literal['python', 'cxxrtl']]): Restrict to one target language ("python" or "cxxrtl"). If None, includes both. SystemC is part of the original benchmark but is excluded here — see prompts.py for why. (default: `None`)
-- `cxxrtl_prompt_variant` (Literal['default', 'fixed']): "default" (vendored as-is) or "fixed" (a corrected CXXRTL API for A/B-testing against the default — see README.md's Evaluation Report for why the default fails to compile against the pinned Yosys version). (default: `'default'`)
-- `stage_missing_defines` (bool): whether to apply Bug 5's fix (inject `` `define `` macros ref.sv needs but doesn't itself define). Defaults to True; set False to reproduce the paper's original ref.sv/test.sv split for a before/after comparison. (default: `True`)
+- `cxxrtl_prompt_variant` (Literal['default', 'fixed']): "default" (vendored as-is) or "fixed" (a corrected CXXRTL API for A/B-testing against the default — see README.md's Evaluation Report for why the default fails to compile against the pinned Yosys version). Defaults to "default", unlike stage_missing_defines below, because whether the corrected prompt actually changes model behavior is itself an open question worth measuring against the paper's original — not a harness bug where "fixed" is simply the correct behavior. (default: `'default'`)
+- `stage_missing_defines` (bool): whether to apply Bug 5's fix (inject `` `define `` macros ref.sv needs but doesn't itself define). Defaults to True, unlike cxxrtl_prompt_variant above, because this is a straightforward harness gap (the official pipeline never needed this staging since it compiles ref.sv/test.sv together) rather than a substantive A/B question; set False to reproduce the paper's original ref.sv/test.sv split for a before/after comparison. (default: `True`)
 
 <!-- /Parameters: Automatically Generated -->
 
@@ -100,15 +100,17 @@ licensed), not re-hosted on HuggingFace.
   `one_shot` variants, a waveform (`.vcd`) dump is statically appended to the
   prompt (no simulation is run to produce it — it's baked into the vendored
   data); `zero_shot` omits it.
-- **Reference Model Generation** (90 = 45 problems x 2 languages): **not**
+- **Reference Model Generation** (88 = 44 problems x 2 languages): **not**
   read from the vendored `ref_model_gen/` folder, which is a separate
   training-data-generation tool built on an unrelated corpus, not the
   paper's benchmark. Instead, each Verilog Gen problem's own spec is paired
   with the vendored `gen_{python,cxxrtl}_prompt.txt` system-prompt template
-  to construct one sample per language. SystemC is part of the original
-  paper's benchmark (44x3=132) but is excluded here: the vendored
-  verification toolbox (`Tool_Box/crosslang_verify`) has no working SystemC
-  path — `dut_systemc_file` is declared but never implemented.
+  to construct one sample per language — except `Prob000_Four-to-one_multiplexer`,
+  excluded due to a self-contradictory prompt (see Known Limitations below).
+  SystemC is part of the original paper's benchmark (44x3=132) but is
+  excluded here: the vendored verification toolbox (`Tool_Box/crosslang_verify`)
+  has no working SystemC path — `dut_systemc_file` is declared but never
+  implemented.
 
 Example (`chipbench_verilog_gen`, `self_contained/Prob001_continuous_input_sequence_detect`):
 
@@ -142,7 +144,8 @@ Files: ref.sv (golden `module RefModule`), test.sv (testbench)
 
 ## Evaluation Report
 
-*Results produced July 2026. Eval version `1-A`. All runs via OpenRouter
+*Results produced July 2026. Eval version `2-B` (the Verilator fix in `3-B` postdates these
+results — see "Known limitations" below). All runs via OpenRouter
 (`openrouter/meta-llama/llama-3.1-8b-instruct`,
 `openrouter/deepseek/deepseek-r1`, `openrouter/openai/gpt-3.5-turbo`).*
 
@@ -158,9 +161,12 @@ Files: ref.sv (golden `module RefModule`), test.sv (testbench)
 - **SystemC excluded.** The paper's reference-model task covers three target languages (Python,
   CXXRTL, SystemC); SystemC is dropped here because the vendored `crosslang_verify` toolbox has no
   working SystemC verification path.
-- **45 vs. 44 `verilog_gen`/`refmodel` problems.** The vendored dataset has gained one problem
+- **45 vs. 44 `verilog_gen` problems.** The vendored dataset has gained one problem
   (`Prob000_Four-to-one_multiplexer`) since the paper's own snapshot (its Table 7 appendix lists
-  44). `chipbench_debug`'s 178 problems match the paper's 89×2-shot count exactly.
+  44). `chipbench_refmodel` excludes this same problem for an unrelated reason (a
+  self-contradictory prompt, see Known Limitations below), so it happens to match the paper's
+  count of 44 problems (88 samples across 2 languages) — coincidentally, not because the exclusion
+  was chosen to match. `chipbench_debug`'s 178 problems match the paper's 89×2-shot count exactly.
 - **`chipbench_refmodel`'s dataset is constructed, not read off disk.** The paper never ships a
   runnable refmodel dataset directory; this implementation builds one at runtime from the
   `verilog_gen` problem set (prompt + expected Verilog reference), reusing the paper's own
@@ -176,13 +182,39 @@ Files: ref.sv (golden `module RefModule`), test.sv (testbench)
 
 **Known limitations and edge cases:**
 
-- **A Verilator strictness gap remains open.** `Prob006_cpu_top`'s golden reference mixes
-  blocking/non-blocking assignments to the same packed variable across `always` blocks — a pattern
-  Icarus Verilog (used for `verilog_gen`/`debug`) accepts but Verilator (used for `refmodel`)
-  rejects outright (`%Error-BLKANDNBLK`). Confirmed to be the paper's own unmodified data
-  (byte-identical `diff`), not a dataset-construction issue. This blocks 100% of
-  `not_self_contained` refmodel attempts on this one problem, in both languages, regardless of
-  model output.
+- **No pre-built Docker image is published — the sandbox builds locally on first use.** This
+  eval compiles Icarus Verilog, Yosys/CXXRTL, and Verilator from source rather than using
+  prebuilt packages, since the versions available via `apt` are too old for
+  `crosslang_verify`'s generated testbenches. A cold build takes up to ~10 minutes (observed
+  range in practice: 4.5–6 minutes with a warm Docker layer cache cleared, longer on a slower
+  connection); every run after that hits Docker's layer cache and starts in a few seconds,
+  unless the Dockerfile or `Tool_Box/crosslang_verify/` changes. This is a deliberate tradeoff,
+  not an oversight — requesting a pre-built, GHCR-published image (per `CONTRIBUTING.md`'s
+  Docker Images section) is possible if the one-time cold-build cost becomes a problem for
+  contributors running this eval repeatedly, but requires maintainer-side GHCR/CI setup, so it's
+  left as self-built for now.
+- **`Prob000_Four-to-one_multiplexer` is excluded from `chipbench_refmodel`.** Its prompt, reused
+  verbatim from `verilog_gen`, contradicts the refmodel system prompt prepended to it: the final
+  line reads "Write the **Verilog code** for this 4-to-1 multiplexer..." while the CXXRTL/Python
+  system prompt says "Do NOT include Verilog." Found via an automated Inspect Scout trajectory
+  scan (`/check-trajectories-workflow`, 100-sample subset of a CXXRTL run) — the scan's
+  `broken_env` scanner flagged it independently of any compile-time signature, not the
+  regex-based failure classifier used elsewhere in this document. Confirmed to be the paper's own
+  unmodified data (byte-identical `diff` against the vendored mirror), and — consistent with this
+  specific problem already being identified elsewhere in this document as the one addition to the
+  vendored dataset absent from the paper's own Table 7 — the only one of all 45 `verilog_gen`
+  prompts with this issue (`grep`-confirmed: none of the other 44 end with an explicit "Verilog
+  code" instruction). Per `CONTRIBUTING.md`'s Data Quality guidance for a broken dataset record,
+  this problem is now filtered out of `chipbench_refmodel` (dropping it from 90 to 88 samples;
+  `chipbench_verilog_gen` and `chipbench_debug` are unaffected, since the prompt is entirely
+  correct there — "write Verilog code" is exactly what's wanted). Note this is present in the
+  official ChipBench repo, not something we added — but excluding it from `chipbench_refmodel`
+  has a second benefit beyond fixing the contradiction: it brings the sample count to exactly the
+  paper's own 44 problems, making the ours-vs-paper comparison in Table 3 below an apples-to-apples
+  44-vs-44 rather than an incidental 45-vs-44. The underlying eval runs still
+  cover all 45 problems (a re-run wasn't needed), but the `chipbench_refmodel` pass-rate tables
+  below are recomputed to exclude this one problem's samples from the aggregate — see the `4-B`
+  changelog entry for how.
 - **GPT-3.5 Turbo cannot run `chipbench_debug`'s one-shot variant on every problem.** Its
   16,385-token context window is sometimes exceeded once a full VCD waveform trace is appended to
   the prompt — a model limitation, not a task-design or harness bug. GPT-3.5 results below cover
@@ -191,18 +223,56 @@ Files: ref.sv (golden `module RefModule`), test.sv (testbench)
   default 20) to manage cost and Docker sandbox load at this dataset scale; `pass_at_10` is exact
   at `epochs=10` (its `epochs >= k` requirement is met), but `pass_at_5`'s combinatorial average has
   fewer terms to draw from than the `epochs=20` runs, so its stderr is comparably larger.
-- **Five infrastructure bugs were found and fixed during development of this implementation**
+- **Six infrastructure bugs were found and fixed during development of this implementation**
   (an outdated CXXRTL prompt API; missing submodule staging for `not_self_contained` refmodel
   problems; a harness testbench referencing a clock signal for combinational circuits; missing
-  macro-definition staging; and a vendored port-extraction script that both loses module boundaries
-  and mis-parses parametrized bit-widths). All five are confirmed fixed and — importantly — the fix
-  is confirmed to generalize: a second model (GPT-3.5 Turbo) run against the fully-fixed pipeline in
-  both refmodel languages shows the identical clean signature as the model used to find and fix the
-  bugs (Llama 3.1 8B), not just an artifact of one model's specific failure patterns.
+  macro-definition staging; a vendored port-extraction script that both loses module boundaries
+  and mis-parses parametrized bit-widths; and a Verilator strictness gap on one problem's golden
+  reference, described below). All are confirmed fixed by a regression test, and the first five are
+  additionally confirmed at full dataset scale — the fix is confirmed to generalize: a second model
+  (GPT-3.5 Turbo) run against the fully-fixed pipeline in both refmodel languages shows the identical
+  clean signature as the model used to find and fix the bugs (Llama 3.1 8B), not just an artifact of
+  one model's specific failure patterns.
+- **The Verilator strictness gap (`Prob006_cpu_top`) is fixed but not yet reconfirmed at full
+  dataset scale.** `Prob006_cpu_top`'s golden reference mixes blocking/non-blocking assignments to
+  the same packed variable across `always` blocks — a pattern Icarus Verilog (`verilog_gen`/`debug`)
+  accepts but Verilator (`refmodel`) used to reject outright (`%Error-BLKANDNBLK`), blocking 100% of
+  `not_self_contained` refmodel attempts on this problem in both languages regardless of model
+  output. Confirmed to be the paper's own unmodified data (byte-identical `diff`), not a
+  dataset-construction issue. Fixed by adding `-Wno-BLKANDNBLK` to `run_verification.py`'s
+  `VERILATOR_WARNS` — this only waives Verilator's lint objection to the construct, it doesn't
+  change which scheduling Verilator itself elaborates it with, and since `chipbench_refmodel` has no
+  other ground truth to compare against, Verilator's own interpretation *is* the golden reference
+  regardless. Confirmed via a deterministic e2e regression test
+  (`test_refmodel_blkandnblk_waiver_e2e`) against the rebuilt Docker image (this file is baked in via
+  `COPY`). **The pass-rate tables below predate this fix** — a fresh full-scale run would be expected
+  to show `not_self_contained` refmodel numbers improve further, since this was the sole remaining
+  cause of its non-zero pipeline-failure share in both languages.
 
 ### Results
 
-#### `chipbench_verilog_gen` — vs. paper Table 2
+Each task below leads with a compact summary (accuracy = pass@1, the full dataset run in every
+case) before the detailed per-category breakdown and paper comparison — the summary is for a
+quick read, the breakdown is what actually supports the comparison-to-paper claims.
+
+#### `chipbench_verilog_gen`
+
+| Model | Provider | Accuracy | Stderr | Time |
+| ----- | -------- | -------- | ------ | ---- |
+| Llama 3.1 8B | Meta | 0.044 | 0.019 | 2h04m |
+| DeepSeek R1 (10 epochs) | DeepSeek | 0.271 | 0.056 | 12h22m* |
+| GPT-3.5 Turbo (10 epochs) | OpenAI | 0.184 | 0.052 | 13m |
+
+*\*DeepSeek R1's wall-clock includes the local machine idling overnight mid-run; actual active
+compute time was closer to 4h22m.*
+
+**Notes:**
+
+- Paper baseline (Table 2, same three models): Llama 3.1 8B 7.0%, DeepSeek R1 23.7%, GPT-3.5
+  Turbo 8.15% pass@1.
+- All three models completed successfully (900/900, 450/450, 450/450 samples respectively).
+
+vs. paper Table 2, full pass@1/5/10:
 
 | Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
 |---|---|---|---|
@@ -216,10 +286,21 @@ magnitude for every model. CPU IP components consistently score higher in our ru
 paper's, for all three models — the one discrepancy here that looks structural rather than
 incidental (see below).
 
-#### `chipbench_debug` — vs. paper Table 4 (zero-shot; see caveat below)
+#### `chipbench_debug`
 
-The paper's Table 4 doesn't state whether it's zero-shot, one-shot, or a blend of both, so this
-comparison assumes it's a reasonable zero-shot proxy, not a confirmed match.
+| Model | Provider | Accuracy | Stderr | Time |
+| ----- | -------- | -------- | ------ | ---- |
+| Llama 3.1 8B (zero-shot) | Meta | 0.074 | 0.016 | 1h49m |
+| GPT-3.5 Turbo (zero-shot, 10 epochs) | OpenAI | 0.211 | 0.035 | 27m |
+
+**Notes:**
+
+- Paper baseline (Table 4, treated as a zero-shot proxy — the paper doesn't state which shot
+  mode Table 4 reports): Llama 3.1 8B 7.77%, GPT-3.5 Turbo 10.0% pass@1.
+- Both models completed successfully (3,560/3,560 and 890/890 samples). GPT-3.5's one-shot
+  variant was not run at scale — see "Known limitations" above.
+
+vs. paper Table 4, full pass@1/5/10 (zero-shot; see caveat above):
 
 | Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
 |---|---|---|---|
@@ -232,14 +313,37 @@ improvement in aggregate (7.36%→7.98% pass@1), but with a genuine per-bug-type
 Assignment, and Timing all improved while State machine got worse — echoing the paper's own mixed
 result rather than contradicting it.
 
-#### `chipbench_refmodel` — vs. paper Table 3 (Python only; no published CXXRTL/SystemC numbers exist)
+#### `chipbench_refmodel`
+
+| Model | Provider | Accuracy | Stderr | Time |
+| ----- | -------- | -------- | ------ | ---- |
+| Llama 3.1 8B, CXXRTL | Meta | 0.045 | 0.021 | 35m |
+| Llama 3.1 8B, Python | Meta | 0.122 | 0.038 | 25m |
+| GPT-3.5 Turbo, CXXRTL (10 epochs) | OpenAI | 0.068 | 0.029 | 12m |
+| GPT-3.5 Turbo, Python (10 epochs) | OpenAI | 0.182 | 0.052 | 11m |
+
+**Notes:**
+
+- Paper baseline (Table 3, Python only — see below): Llama 3.1 8B 2.22%, GPT-3.5 Turbo 5.56%
+  pass@1. No published baseline exists for CXXRTL.
+- All four runs completed successfully (900/900 and 450/450 samples respectively), against the
+  pre-`4-B` 45-problem dataset. Figures in this table and the one below are recomputed to exclude
+  `Prob000_Four-to-one_multiplexer` (see the `4-B` changelog entry) from the already-collected
+  per-sample results — a re-run wasn't needed since each sample was scored independently; only the
+  aggregate pass@1/5/10 and stderr were recomputed over the remaining 44 problems, reimplementing
+  Inspect's own `pass_at_k` reducer and `accuracy`/`stderr` metrics
+  (`inspect_ai.scorer._reducer.reducer.pass_at`, `inspect_ai.scorer._metrics`) applied to the
+  filtered sample set. The 45-problem originals are 0.046/0.128/0.067/0.200 respectively (CXXRTL,
+  Python, CXXRTL, Python order above).
+
+vs. paper Table 3 (Python only; no published CXXRTL/SystemC numbers exist), full pass@1/5/10:
 
 | Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
 |---|---|---|---|
-| Llama 3.1 8B, Python | 12.8(3.79)% / 2.22% | 24.7(5.83)% / 5.56% | 29.3(6.43)% / 6.67% |
-| GPT-3.5 Turbo, Python (10 epochs) | 20.0(5.43)% / 5.56% | 26.1(6.54)% / 6.67% | 26.7(6.67)% / 7.78% |
-| Llama 3.1 8B, CXXRTL | 4.56(2.02)% | 11.4(4.03)% | 15.1(4.81)% |
-| GPT-3.5 Turbo, CXXRTL (10 epochs) | 6.67(2.81)% | 13.9(4.73)% | 17.8(5.76)% |
+| Llama 3.1 8B, Python | 12.2(3.82)% / 2.22% | 23.1(5.74)% / 5.56% | 27.7(6.36)% / 6.67% |
+| GPT-3.5 Turbo, Python (10 epochs) | 18.2(5.24)% / 5.56% | 24.4(6.47)% / 6.67% | 25.0(6.60)% / 7.78% |
+| Llama 3.1 8B, CXXRTL | 4.5(2.07)% | 11.0(4.11)% | 14.3(4.85)% |
+| GPT-3.5 Turbo, CXXRTL (10 epochs) | 6.8(2.87)% | 14.2(4.83)% | 18.2(5.88)% |
 
 CXXRTL has no published comparison to make — the paper reports Table 3 for Python only, despite
 CXXRTL being part of its stated three-language methodology (44×3=132 samples).
@@ -266,6 +370,10 @@ both hitting exactly 0% on exactly the two categories a missing-submodule-stagin
 | `chipbench_debug` | GPT-3.5 Turbo (zero-shot only) | 890 / 890 | 10 |
 | `chipbench_refmodel` | Llama 3.1 8B (Python + CXXRTL) | 1,800 / 1,800 | 20 |
 | `chipbench_refmodel` | GPT-3.5 Turbo (Python + CXXRTL) | 900 / 900 | 10 |
+
+The `chipbench_refmodel` totals above (1,800 and 900) predate the `4-B` exclusion of
+`Prob000_Four-to-one_multiplexer`; a fresh run against the current dataset would total 1,760 and
+880 respectively (44 problems × 2 languages × epochs).
 
 Commands used:
 
@@ -301,6 +409,34 @@ uv run inspect eval src/chipbench/chipbench.py@chipbench_refmodel \
 are both justified above under "Known limitations." All other parameters use task defaults.
 
 ## Changelog
+
+### `4-B` (July 2026)
+
+`Prob000_Four-to-one_multiplexer` excluded from `chipbench_refmodel`'s dataset: its prompt
+(reused verbatim from `verilog_gen`) tells the model to write Verilog code, contradicting the
+refmodel system prompt's "do NOT include Verilog" instruction — a genuine, if narrow, broken
+dataset record (see Known Limitations above), handled per `CONTRIBUTING.md`'s Data Quality
+guidance. `chipbench_refmodel` drops from 90 to 88 samples; `chipbench_verilog_gen` and
+`chipbench_debug` are unaffected. Bumped `N` (dataset change affecting comparability); no
+interface change, so `X` is unchanged.
+
+The four existing `chipbench_refmodel` evaluation runs (Llama 3.1 8B and GPT-3.5 Turbo, Python and
+CXXRTL) were not re-run — each sample was already scored independently, so `Prob000`'s per-epoch
+scores could simply be dropped from the aggregate. The Results tables above are recomputed directly
+from the existing `.eval` logs' per-sample-epoch scores, reimplementing Inspect's own `pass_at_k`
+reducer (`inspect_ai.scorer._reducer.reducer.pass_at`: `1 - C(n-c,k)/C(n,k)` per sample) and its
+`accuracy`/`stderr` metrics (`inspect_ai.scorer._metrics`: mean and `std(ddof=1)/sqrt(n)` across the
+remaining 44 samples) over the filtered sample set. The recomputed "before" values (all 45 problems)
+matched the previously-published `3-B` numbers exactly, confirming the recomputation is correct.
+
+### `3-B` (July 2026)
+
+A sixth infrastructure bug, found while working through `EVALUATION_CHECKLIST.md`'s Dataset
+Validity check ("is it reasonably possible for a model to succeed at each sample?"): Verilator
+rejected `Prob006_cpu_top`'s golden reference outright (`%Error-BLKANDNBLK`), blocking 100% of
+`not_self_contained` refmodel attempts on that problem in both languages regardless of model
+output. Fixed by adding `-Wno-BLKANDNBLK` to the vendored `run_verification.py`'s
+`VERILATOR_WARNS`. Bumped `N` (scoring-affecting fix); no interface change, so `X` is unchanged.
 
 ### `2-B` (July 2026)
 

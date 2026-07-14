@@ -51,6 +51,17 @@ VERILOG_GEN_CATEGORIES: tuple[VerilogGenCategory, ...] = (
 BUG_TYPES: tuple[BugType, ...] = ("arithmetic", "assignment", "state_machine", "timing")
 SHOTS: tuple[Shot, ...] = ("zero_shot", "one_shot")
 
+# Excluded from chipbench_refmodel only (not chipbench_verilog_gen/debug):
+# this problem's prompt, reused verbatim from verilog_gen, ends with "Write
+# the Verilog code for this..." while the refmodel system prompt prepended
+# to it says "Do NOT include Verilog" -- a self-contradictory instruction
+# found via Inspect Scout trajectory analysis (see README.md's Evaluation
+# Report). Confirmed to be the paper's own unmodified data, and the only
+# one of all 45 verilog_gen prompts with this issue. The prompt is entirely
+# correct for chipbench_verilog_gen, where "write Verilog code" is exactly
+# what's wanted, so it stays included there.
+_EXCLUDED_REFMODEL_PROBLEM_IDS = frozenset({"Prob000_Four-to-one_multiplexer"})
+
 _PROBLEM_ID_PATTERN = re.compile(r"^(Prob\d+_.+)_prompt\.txt$")
 _SUBMODULE_SOURCE_PATTERN = re.compile(r"```(?:verilog)?\n(.*?)```", re.DOTALL)
 _MACRO_USE_PATTERN = re.compile(r"`([A-Za-z_]\w*)")
@@ -154,6 +165,10 @@ def verilog_gen_samples(category: VerilogGenCategory | None = None) -> Dataset:
         category: Restrict to one category ("self_contained",
             "not_self_contained", or "cpu_ip"). If None, includes all three.
     """
+    if category is not None and category not in VERILOG_GEN_CATEGORIES:
+        raise ValueError(
+            f"Unsupported category={category!r}. Supported: {VERILOG_GEN_CATEGORIES}"
+        )
     categories = (category,) if category is not None else VERILOG_GEN_CATEGORIES
     samples = []
     for cat in categories:
@@ -184,6 +199,10 @@ def debug_samples(
         bug_type: Restrict to one bug type ("arithmetic", "assignment",
             "state_machine", or "timing"). If None, includes all four.
     """
+    if shot is not None and shot not in SHOTS:
+        raise ValueError(f"Unsupported shot={shot!r}. Supported: {SHOTS}")
+    if bug_type is not None and bug_type not in BUG_TYPES:
+        raise ValueError(f"Unsupported bug_type={bug_type!r}. Supported: {BUG_TYPES}")
     shots = (shot,) if shot is not None else SHOTS
     bug_types = (bug_type,) if bug_type is not None else BUG_TYPES
     samples = []
@@ -238,7 +257,13 @@ def refmodel_samples(
     for cat in VERILOG_GEN_CATEGORIES:
         directory = DATA_DIR / "verilog_gen" / cat
         for problem_id in _find_problem_ids(directory):
+            if problem_id in _EXCLUDED_REFMODEL_PROBLEM_IDS:
+                continue
             prompt, ref, test = _load_triplet(directory, problem_id)
+            # Unconditional, unlike stage_missing_defines below: without the
+            # submodule's source, ref.sv references an undefined module and
+            # cannot compile at all, in any configuration, so there is no
+            # meaningful "before" state to reproduce by toggling this off.
             if cat == "not_self_contained":
                 submodule_source = _extract_submodule_source(prompt)
                 if submodule_source:

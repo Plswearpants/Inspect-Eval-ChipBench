@@ -18,12 +18,19 @@ Files:
     "Tool_Box/crosslang_verify/" directory; invoked as a subprocess by
     src/chipbench/scorers.py rather than imported, and excluded from this
     project's own lint/type-check/format tooling for that reason — see the
-    exclusion comments in pyproject.toml. Three files are modified from
+    exclusion comments in pyproject.toml. Four files are modified from
     upstream, all documented in README.md's Evaluation Report and at
     the change itself:
       - src/run_verification.py's link step now also builds and links
         verilated_threads.o, required by Verilator 5.x but not by the
         older Verilator version the upstream script was written against.
+      - src/run_verification.py's VERILATOR_WARNS also adds
+        -Wno-BLKANDNBLK, waiving Verilator's rejection of a
+        blocking/non-blocking assignment pattern to the same packed
+        variable that Icarus Verilog tolerates (present in the paper's own
+        Prob006_cpu_top_ref.sv, unmodified) -- this used to block 100% of
+        refmodel attempts on that one problem in both languages regardless
+        of model output.
       - src/generate_testbench.py's warmup-code generation now gates
         sequential-only DUT initialization behind is_sequential, which the
         upstream version omitted, causing combinational-circuit testbenches
@@ -31,13 +38,14 @@ Files:
       - tools/extract_ports.py's port-extraction regex now (a) only scans
         the first module in a file rather than the whole file, since a
         submodule staged into the same ref.sv for chipbench_refmodel (see
-        Bug 2) could otherwise have its ports merged into the top module's,
-        and (b) resolves parametrized bit-widths (e.g. [DATA_WIDTH-1:0] or
+        dataset.py's not_self_contained submodule-staging logic) could
+        otherwise have its ports merged into the top module's, and (b)
+        resolves parametrized bit-widths (e.g. [DATA_WIDTH-1:0] or
         [`WORD_SIZE-1:0]) by looking up parameter/localparam/`define values
         in the file, rather than assuming widths are always literal
         integers — the original regex would silently mis-extract the type
         keyword itself ("reg"/"wire"/"logic") as the port name when it hit
-        a non-literal width, which is Bug 6 in the known-issues doc.
+        a non-literal width.
   - src/chipbench/data/refmodel_prompts/gen_cxxrtl_prompt_fixed.txt  (new
     file, not vendored: a corrected variant of the upstream
     gen_cxxrtl_prompt.txt, rewriting its CXXRTL virtual-method

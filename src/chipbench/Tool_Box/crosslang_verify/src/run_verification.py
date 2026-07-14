@@ -18,6 +18,17 @@ CXXRTL_INCLUDE = "/usr/local/share/yosys/include/backends/cxxrtl/runtime"
 VERILATOR_WARNS = [
     "-Wno-fatal", "-Wno-WIDTH", "-Wno-UNUSED",
     "-Wno-UNDRIVEN", "-Wno-UNOPTFLAT", "-Wno-DECLFILENAME",
+    # BLKANDNBLK: Verilator rejects blocking/non-blocking assignments to
+    # potentially overlapping bits of the same packed variable across
+    # different always blocks (Prob006_cpu_top's ref.sv does this, e.g.
+    # `nextPC`) -- a pattern Icarus Verilog (used for verilog_gen/debug)
+    # tolerates. Waiving it doesn't change the scheduling Verilator itself
+    # picks (this only silences a lint objection to a construct Verilator
+    # already elaborates one specific, deterministic way); the golden
+    # reference model is Verilator's own interpretation regardless, since
+    # chipbench_refmodel has no other ground truth to compare against.
+    # See README.md's Evaluation Report.
+    "-Wno-BLKANDNBLK",
 ]
 
 

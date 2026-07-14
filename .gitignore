@@ -39,5 +39,10 @@ agent_artefacts/trajectory_analysis/inspect_scout/scout_results/
 agent_artefacts/trajectory_analysis/inspect_scout/logs/
 agent_artefacts/trajectory_analysis/inspect_scout/__pycache__/
 
+# Vendored full mirror of the official ChipBench repo, kept locally for
+# diffing/verification during development but not part of the PR -- only the
+# code actually used is vendored into src/chipbench/ itself.
+ToImplement/
+
 # uv
 .python-version

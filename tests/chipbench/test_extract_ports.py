@@ -3,9 +3,8 @@
 Loaded by file path rather than package import since Tool_Box/crosslang_verify
 has no __init__.py -- it's a vendored, subprocess-invoked toolbox, not part of
 the chipbench package, and is excluded from this project's own lint/type-check
-tooling (see NOTICE) for that reason. See
-agent_artefacts/chipbench/known-issues/refmodel-scoring-gaps.md for the bug
-writeup.
+tooling (see NOTICE) for that reason. See README.md's Evaluation Report for
+the bug writeup.
 """
 
 import importlib.util

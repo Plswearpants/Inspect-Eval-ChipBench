@@ -19,7 +19,7 @@ inspect eval chipbench/chipbench_debug -T shot=one_shot -T bug_type=timing
 # Reference model generation (Python or CXXRTL; SystemC is not scoreable, see prompts.py)
 inspect eval chipbench/chipbench_refmodel -T language=python
 
-# A/B-test the corrected CXXRTL prompt (see known-issues/refmodel-scoring-gaps.md)
+# A/B-test the corrected CXXRTL prompt (see README.md's Known Limitations)
 inspect eval chipbench/chipbench_refmodel -T language=cxxrtl -T cxxrtl_prompt_variant=fixed
 """
 
@@ -114,11 +114,19 @@ def chipbench_refmodel(
         cxxrtl_prompt_variant: "default" (vendored as-is) or "fixed" (a
             corrected CXXRTL API for A/B-testing against the default — see
             README.md's Evaluation Report for why the default fails to
-            compile against the pinned Yosys version).
+            compile against the pinned Yosys version). Defaults to
+            "default", unlike stage_missing_defines below, because whether
+            the corrected prompt actually changes model behavior is itself
+            an open question worth measuring against the paper's original —
+            not a harness bug where "fixed" is simply the correct behavior.
         stage_missing_defines: whether to apply Bug 5's fix (inject
             `` `define `` macros ref.sv needs but doesn't itself define).
-            Defaults to True; set False to reproduce the paper's original
-            ref.sv/test.sv split for a before/after comparison.
+            Defaults to True, unlike cxxrtl_prompt_variant above, because
+            this is a straightforward harness gap (the official pipeline
+            never needed this staging since it compiles ref.sv/test.sv
+            together) rather than a substantive A/B question; set False to
+            reproduce the paper's original ref.sv/test.sv split for a
+            before/after comparison.
     """
     return Task(
         dataset=refmodel_samples(

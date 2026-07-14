@@ -71,41 +71,54 @@ class TopModule:
 ```
 """
 
-# A correct CXXRTL implementation of Prob000_Four-to-one_multiplexer -- purely
-# combinational (no clock port at all), correctly omitting any p_clk member
-# per the prompt's own rules. Regression test for Bug 3
-# (agent_artefacts/chipbench/known-issues/refmodel-scoring-gaps.md): the
+# A correct CXXRTL implementation of Prob011_4-bit_carry_look-ahead_adder_circuit
+# -- purely combinational (no clock port at all), correctly omitting any
+# p_clk member. Regression test (see README.md's Evaluation Report): the
 # vendored testbench generator used to reference cxxrtl_dut.p_clk
 # unconditionally even for combinational DUTs, which this hand-written,
 # deliberately-correct submission would fail to compile against regardless of
 # its own correctness. A real model's output can't be used for this check --
 # it needs to genuinely omit p_clk to expose the bug, which isn't guaranteed
-# on any single sampled completion.
-_CORRECT_CXXRTL_MULTIPLEXER = """
+# on any single sampled completion. (Prob000_Four-to-one_multiplexer was
+# used for this previously, but is now excluded from chipbench_refmodel --
+# see the 4-B changelog entry -- so a different combinational problem is
+# used here instead.)
+_CORRECT_CXXRTL_CLA_ADDER = """
 ```cpp
 #include <cxxrtl/cxxrtl.h>
 
 namespace cxxrtl_design {
 
 struct p_TopModule : public cxxrtl::module {
-    cxxrtl::value<2> p_d0;
-    cxxrtl::value<2> p_d1;
-    cxxrtl::value<2> p_d2;
-    cxxrtl::value<2> p_d3;
-    cxxrtl::value<2> p_sel;
-    cxxrtl::value<2> p_mux__out;
+    cxxrtl::value<4> p_A__in;
+    cxxrtl::value<4> p_B__in;
+    cxxrtl::value<1> p_C__1;
+    cxxrtl::value<1> p_CO;
+    cxxrtl::value<4> p_S;
 
     void reset() override {
     }
 
     bool eval(cxxrtl::performer *performer = nullptr) override {
-        uint32_t sel = p_sel.data[0] & 0x3;
-        uint32_t result;
-        if (sel == 0) result = p_d0.data[0];
-        else if (sel == 1) result = p_d1.data[0];
-        else if (sel == 2) result = p_d2.data[0];
-        else result = p_d3.data[0];
-        p_mux__out.data[0] = result & 0x3;
+        uint32_t a = p_A__in.data[0] & 0xF;
+        uint32_t b = p_B__in.data[0] & 0xF;
+        uint32_t cin = p_C__1.data[0] & 0x1;
+
+        uint32_t g = a & b;
+        uint32_t p = a ^ b;
+
+        uint32_t c0 = (g & 0x1) | ((p & 0x1) & cin);
+        uint32_t c1 = ((g >> 1) & 0x1) | (((p >> 1) & 0x1) & c0);
+        uint32_t c2 = ((g >> 2) & 0x1) | (((p >> 2) & 0x1) & c1);
+        uint32_t c3 = ((g >> 3) & 0x1) | (((p >> 3) & 0x1) & c2);
+
+        uint32_t s0 = (p & 0x1) ^ cin;
+        uint32_t s1 = ((p >> 1) & 0x1) ^ c0;
+        uint32_t s2 = ((p >> 2) & 0x1) ^ c1;
+        uint32_t s3 = ((p >> 3) & 0x1) ^ c2;
+
+        p_S.data[0] = (s3 << 3) | (s2 << 2) | (s1 << 1) | s0;
+        p_CO.data[0] = c3;
         return true;
     }
 
@@ -195,9 +208,9 @@ def test_refmodel_cxxrtl_combinational_e2e() -> None:
     """
     [log] = eval(
         tasks=chipbench_refmodel(language="cxxrtl", cxxrtl_prompt_variant="fixed"),
-        model=_mock_model(_CORRECT_CXXRTL_MULTIPLEXER),
+        model=_mock_model(_CORRECT_CXXRTL_CLA_ADDER),
         epochs=Epochs(1, ["pass_at_1"]),
-        sample_id="Prob000_Four-to-one_multiplexer/cxxrtl",
+        sample_id="Prob011_4-bit_carry_look-ahead_adder_circuit/cxxrtl",
     )
     assert log.status == "success"
     assert log.results is not None
@@ -261,8 +274,8 @@ def test_refmodel_parametrized_width_e2e() -> None:
 
     Prob002_alu declares `input logic [DATA_WIDTH-1:0] SrcA` with
     `parameter DATA_WIDTH = 32` -- the exact pattern that used to make
-    extract_ports.py mis-extract "logic" as a bogus port name (see Bug 6b in
-    known-issues/refmodel-scoring-gaps.md). Checks the specific old failure
+    extract_ports.py mis-extract "logic" as a bogus port name (see
+    README.md's Evaluation Report). Checks the specific old failure
     signatures are gone rather than requiring perfect ALU correctness, since
     that's what this regression is actually about.
     """
@@ -274,7 +287,9 @@ def test_refmodel_parametrized_width_e2e() -> None:
     )
     assert log.status == "success"
     assert log.samples is not None
-    explanation = log.samples[0].scores["crosslang_verify_scorer"].explanation or ""
+    scores = log.samples[0].scores
+    assert scores is not None
+    explanation = scores["crosslang_verify_scorer"].explanation or ""
     assert "redeclaration of" not in explanation
     assert "has no member named" not in explanation
     assert "RefModule compiled successfully" in explanation
@@ -301,6 +316,39 @@ def test_refmodel_multi_module_e2e() -> None:
     )
     assert log.status == "success"
     assert log.samples is not None
-    explanation = log.samples[0].scores["crosslang_verify_scorer"].explanation or ""
+    scores = log.samples[0].scores
+    assert scores is not None
+    explanation = scores["crosslang_verify_scorer"].explanation or ""
     assert "redeclaration of" not in explanation
+    assert "RefModule compiled successfully" in explanation
+
+
+@pytest.mark.docker
+@pytest.mark.slow(60)
+def test_refmodel_blkandnblk_waiver_e2e() -> None:
+    """Regression test for the Verilator BLKANDNBLK strictness gap.
+
+    Prob006_cpu_top's ref.sv mixes blocking/non-blocking assignments to the
+    same packed variable (`nextPC`) across different always blocks -- a
+    pattern Icarus Verilog (verilog_gen/debug) tolerates but Verilator used
+    to reject outright with `%Error-BLKANDNBLK`, blocking 100% of attempts
+    on this problem regardless of model output. `-Wno-BLKANDNBLK` in
+    run_verification.py's VERILATOR_WARNS waives the objection without
+    changing which scheduling Verilator itself picks (see README.md).
+    """
+    [log] = eval(
+        tasks=chipbench_refmodel(language="python"),
+        model=_mock_model(
+            "```python\nclass TopModule:\n    def eval(self, inputs):\n        return {}\n```"
+        ),
+        epochs=Epochs(1, ["pass_at_1"]),
+        sample_id="Prob006_cpu_top/python",
+    )
+    assert log.status == "success"
+    assert log.samples is not None
+    scores = log.samples[0].scores
+    assert scores is not None
+    explanation = scores["crosslang_verify_scorer"].explanation or ""
+    assert "BLKANDNBLK" not in explanation
+    assert "Unsupported" not in explanation
     assert "RefModule compiled successfully" in explanation

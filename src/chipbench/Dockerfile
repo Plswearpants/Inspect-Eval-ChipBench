@@ -1,6 +1,10 @@
+# IMAGE_NAME=chipbench
+#
 # Toolchain image for ChipBench scoring: Icarus Verilog (generation/debugging
 # simulation) + Yosys/CXXRTL + Verilator (cross-language reference model
-# verification, via the vendored Tool_Box/crosslang_verify).
+# verification, via the vendored Tool_Box/crosslang_verify). Currently built
+# locally on first use (no pre-published GHCR image) -- see README.md's
+# Known Limitations for why that's a deliberate choice, not an oversight.
 #
 # Adapted from the vendored ChipBench Dockerfile
 # (https://github.com/zhongkaiyu/ChipBench/blob/main/Dockerfile), with one
@@ -8,6 +12,12 @@
 # 22.04's archive (~v4.038), which is too old for crosslang_verify's
 # generated testbenches (compiled against a modern Verilator/CXXRTL API).
 # Here Verilator is built from source and pinned to a specific tag instead.
+#
+# No non-root USER: this matches the vendored Dockerfile (also root-only),
+# and the `make install` steps below write to system paths (/usr/local),
+# which would need extra user/permission setup to run as non-root. Risk is
+# limited by Docker's own container isolation; scoring never runs
+# externally-supplied binaries as root outside this sandbox.
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive

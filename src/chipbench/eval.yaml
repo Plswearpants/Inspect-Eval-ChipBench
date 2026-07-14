@@ -13,14 +13,15 @@ description: |
 arxiv: https://arxiv.org/abs/2601.21448
 group: Coding
 contributors: ["Plswearpants"]
-version: "2-B"
+version: "4-B"
 tasks:
   - name: chipbench_verilog_gen
     dataset_samples: 45
   - name: chipbench_debug
     dataset_samples: 178
   - name: chipbench_refmodel
-    dataset_samples: 90
+    dataset_samples: 88
 metadata:
   sandbox: ["scorer"]
   requires_internet: false
+external_assets: []

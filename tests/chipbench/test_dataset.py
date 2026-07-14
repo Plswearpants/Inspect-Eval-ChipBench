@@ -58,6 +58,21 @@ def test_verilog_gen_samples_unique_ids() -> None:
     assert len(ids) == len(set(ids))
 
 
+def test_verilog_gen_samples_rejects_invalid_category() -> None:
+    with pytest.raises(ValueError, match="Unsupported category"):
+        verilog_gen_samples(category="bogus")  # type: ignore[arg-type]
+
+
+def test_debug_samples_rejects_invalid_shot() -> None:
+    with pytest.raises(ValueError, match="Unsupported shot"):
+        debug_samples(shot="bogus")  # type: ignore[arg-type]
+
+
+def test_debug_samples_rejects_invalid_bug_type() -> None:
+    with pytest.raises(ValueError, match="Unsupported bug_type"):
+        debug_samples(bug_type="bogus")  # type: ignore[arg-type]
+
+
 def test_debug_samples_real_example() -> None:
     dataset = debug_samples(shot="zero_shot", bug_type="arithmetic")
     sample = next(
@@ -101,7 +116,30 @@ def test_refmodel_samples_constructs_one_per_language_per_problem() -> None:
     cxxrtl_samples = refmodel_samples(language="cxxrtl")
 
     assert len(all_samples) == len(python_samples) + len(cxxrtl_samples)
-    assert len(python_samples) == len(verilog_gen_samples())
+    # One fewer than verilog_gen_samples(): Prob000_Four-to-one_multiplexer
+    # is excluded from chipbench_refmodel only, see
+    # test_refmodel_samples_excludes_contradictory_prompt below.
+    assert len(python_samples) == len(verilog_gen_samples()) - 1
+
+
+def test_refmodel_samples_excludes_contradictory_prompt() -> None:
+    """Prob000's prompt contradicts the refmodel system prompt; verilog_gen keeps it.
+
+    Its prompt says "write Verilog" but the refmodel system prompt prepended
+    to it says "do NOT include Verilog" -- a self-contradictory instruction
+    found via Inspect Scout (see README.md's Evaluation Report). Excluded
+    from chipbench_refmodel but not from chipbench_verilog_gen, where the
+    prompt is entirely correct.
+    """
+    refmodel_ids = {
+        s.metadata["problem_id"] for s in refmodel_samples() if s.metadata is not None
+    }
+    verilog_gen_ids = {
+        s.metadata["problem_id"] for s in verilog_gen_samples() if s.metadata is not None
+    }
+
+    assert "Prob000_Four-to-one_multiplexer" not in refmodel_ids
+    assert "Prob000_Four-to-one_multiplexer" in verilog_gen_ids
 
 
 def test_refmodel_samples_python_includes_system_prompt_and_spec() -> None:

@@ -87,7 +87,7 @@ def extract_ports_from_verilog(verilog_path):
 
     Only scans the *first* module in the file -- not the whole file. Some
     refmodel samples stage a required submodule into the same ref.sv
-    (see Bug 2 in the known-issues doc); without this scoping, a submodule
+    (see README.md's Evaluation Report); without this scoping, a submodule
     port sharing a name with the top module's would get extracted twice
     (Bug 6a), and a submodule-only port would get bound onto the top-level
     class it doesn't belong to. The paper's own ref.sv files are always
