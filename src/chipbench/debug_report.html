@@ -1,0 +1,1277 @@
+<title>ChipBench × Llama 3.1 8B — Failure-Mode Trajectory</title>
+
+<style>
+  :root {
+    --bg: #f7f8f6;
+    --bg-raised: #ffffff;
+    --ink: #182220;
+    --ink-soft: #4b5a56;
+    --caption: #6d7d78;
+    --accent: #0f8f6f;
+    --accent-soft: #dbf0e8;
+    --rule: #dbe3df;
+    --rule-strong: #b9c6c1;
+    --mono: "SF Mono", ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+    --serif: Charter, "Iowan Old Style", Georgia, "Times New Roman", serif;
+
+    --pass: #0f8f6f;
+    --pass-soft: #dbf0e8;
+    --capability: #3d6fb4;
+    --capability-soft: #dfe9f6;
+    --pipeline: #c0392b;
+    --pipeline-soft: #f8e2df;
+    --ambiguous: #a8721c;
+    --ambiguous-soft: #f3e6d1;
+    --unclassified: #8a8f8c;
+    --unclassified-soft: #e9ebea;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1513;
+      --bg-raised: #131c1a;
+      --ink: #dde6e3;
+      --ink-soft: #9db0aa;
+      --caption: #7c8d87;
+      --accent: #5ee6c0;
+      --accent-soft: #16332a;
+      --rule: #22302c;
+      --rule-strong: #2e3f3a;
+
+      --pass: #5ee6c0;
+      --pass-soft: #16332a;
+      --capability: #7fa8e0;
+      --capability-soft: #1c2a3d;
+      --pipeline: #e8776a;
+      --pipeline-soft: #3a2220;
+      --ambiguous: #d9a75c;
+      --ambiguous-soft: #362a17;
+      --unclassified: #8a938f;
+      --unclassified-soft: #23292a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1513;
+    --bg-raised: #131c1a;
+    --ink: #dde6e3;
+    --ink-soft: #9db0aa;
+    --caption: #7c8d87;
+    --accent: #5ee6c0;
+    --accent-soft: #16332a;
+    --rule: #22302c;
+    --rule-strong: #2e3f3a;
+
+    --pass: #5ee6c0;
+    --pass-soft: #16332a;
+    --capability: #7fa8e0;
+    --capability-soft: #1c2a3d;
+    --pipeline: #e8776a;
+    --pipeline-soft: #3a2220;
+    --ambiguous: #d9a75c;
+    --ambiguous-soft: #362a17;
+    --unclassified: #8a938f;
+    --unclassified-soft: #23292a;
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f8f6;
+    --bg-raised: #ffffff;
+    --ink: #182220;
+    --ink-soft: #4b5a56;
+    --caption: #6d7d78;
+    --accent: #0f8f6f;
+    --accent-soft: #dbf0e8;
+    --rule: #dbe3df;
+    --rule-strong: #b9c6c1;
+
+    --pass: #0f8f6f;
+    --pass-soft: #dbf0e8;
+    --capability: #3d6fb4;
+    --capability-soft: #dfe9f6;
+    --pipeline: #c0392b;
+    --pipeline-soft: #f8e2df;
+    --ambiguous: #a8721c;
+    --ambiguous-soft: #f3e6d1;
+    --unclassified: #8a8f8c;
+    --unclassified-soft: #e9ebea;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 3.5rem 1.75rem 6rem;
+  }
+
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    margin-bottom: 2.75rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.7rem, 4vw, 2.3rem);
+    margin: 0;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  .dek {
+    font-size: 1.05rem;
+    color: var(--ink-soft);
+    max-width: 68ch;
+    text-wrap: balance;
+  }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin: 0 0 1rem;
+    color: var(--ink);
+  }
+
+  h3 {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--caption);
+    margin: 0 0 0.75rem;
+  }
+
+  section {
+    margin-bottom: 3rem;
+  }
+
+  p { margin: 0.75rem 0; }
+  p.tight { margin: 0; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--accent-soft);
+    color: var(--ink);
+    padding: 0.05em 0.35em;
+    border-radius: 3px;
+  }
+
+  /* ---- summary cards ---- */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+  .card {
+    background: var(--bg-raised);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .card .label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--caption);
+  }
+  .card .trend {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.5rem;
+    font-weight: 600;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .card .trend .from { color: var(--caption); font-size: 0.85rem; font-weight: 400; }
+  .card .trend .arrow { color: var(--ink-soft); font-size: 1rem; }
+  .card .trend .to { color: var(--pipeline); }
+  .card.good .trend .to { color: var(--pass); }
+  .card .note { font-size: 0.85rem; color: var(--ink-soft); }
+
+  /* ---- chart ---- */
+  .chart-wrap {
+    background: var(--bg-raised);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.25rem 0.75rem;
+  }
+  .chart-wrap svg { display: block; width: 100%; height: auto; }
+  .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+    padding: 0.75rem 0.25rem 0.25rem;
+  }
+  .chart-legend .swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .chart-legend .swatch::before {
+    content: "";
+    width: 18px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--sw-color, var(--ink));
+  }
+  .chart-legend .swatch.dashed::before {
+    background: repeating-linear-gradient(to right, var(--sw-color, var(--ink)) 0 4px, transparent 4px 7px);
+  }
+
+  .chart-caption {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    margin-top: 0.5rem;
+  }
+
+  /* ---- category pill ---- */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .pill.pass { background: var(--pass-soft); color: var(--pass); }
+  .pill.capability { background: var(--capability-soft); color: var(--capability); }
+  .pill.pipeline { background: var(--pipeline-soft); color: var(--pipeline); }
+  .pill.ambiguous { background: var(--ambiguous-soft); color: var(--ambiguous); }
+  .pill.unclassified { background: var(--unclassified-soft); color: var(--unclassified); }
+
+  /* ---- attribution badges: whose fault ---- */
+  .attrib {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .attrib::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .attrib.ours { color: var(--capability); }
+  .attrib.ours::before { background: var(--capability); }
+  .attrib.papers { color: var(--pipeline); }
+  .attrib.papers::before { background: var(--pipeline); border: 1.5px solid var(--pipeline); background: transparent; }
+  .attrib.mixed { color: var(--ambiguous); }
+  .attrib.mixed::before { background: linear-gradient(90deg, var(--capability) 50%, var(--pipeline) 50%); }
+  .attrib.na { color: var(--caption); }
+  .attrib.na::before { background: var(--unclassified); }
+
+  /* ---- scope tree ---- */
+  ul.tree, ul.tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  ul.tree {
+    margin-top: 1.5rem;
+  }
+  ul.tree > li {
+    margin-bottom: 1.25rem;
+  }
+  ul.tree ul {
+    margin: 0.6rem 0 0 0.55rem;
+    padding-left: 1.1rem;
+    border-left: 1.5px solid var(--rule-strong);
+  }
+  ul.tree ul li {
+    padding: 0.3rem 0;
+    border-bottom: 1px dashed var(--rule);
+  }
+  ul.tree ul li:last-child { border-bottom: none; }
+  .tree-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .tree-node {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+  .tree-desc {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+  .tree-count {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+    flex: none;
+  }
+  ul.tree > li > .tree-row .tree-count {
+    font-size: 1.15rem;
+  }
+  ul.tree > li > .tree-row > .tree-node > strong {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+  }
+  .tree-note {
+    margin: 0.7rem 0 0 1.65rem;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+  .verified-note {
+    display: block;
+    font-family: var(--serif);
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: var(--caption);
+    margin-top: 0.25rem;
+  }
+
+  /* ---- stacked bars (bucket composition) ---- */
+  .stackbar {
+    display: flex;
+    height: 22px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+  }
+  .stackbar .seg { height: 100%; }
+  .stackbar .seg.pass { background: var(--pass); }
+  .stackbar .seg.capability { background: var(--capability); }
+  .stackbar .seg.pipeline { background: var(--pipeline); }
+  .stackbar .seg.ambiguous { background: var(--ambiguous); }
+  .stackbar .seg.unclassified { background: var(--unclassified); }
+  .stackbar.mini { height: 13px; border-radius: 3px; }
+
+  /* ---- before/after comparison rows ---- */
+  .ba-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 0.9rem;
+    align-items: center;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .ba-row.head {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--caption);
+    border-bottom: 1px solid var(--rule-strong);
+    padding-bottom: 0.5rem;
+  }
+  .ba-row:last-child { border-bottom: none; }
+  .ba-label { font-weight: 600; font-size: 0.92rem; }
+  .ba-label .lang { font-weight: 400; color: var(--caption); font-family: var(--mono); font-size: 0.78rem; }
+  .ba-stack { display: flex; flex-direction: column; gap: 0.25rem; }
+  .ba-stack .tag { font-family: var(--mono); font-size: 0.68rem; color: var(--caption); }
+  .ba-delta {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .ba-delta .arrow-down { color: var(--pass); }
+  @media (max-width: 700px) {
+    .ba-row { grid-template-columns: 1fr; row-gap: 0.4rem; }
+  }
+
+  .run-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 160px;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .run-row:last-child { border-bottom: none; }
+  .run-row .meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .run-row .meta .title { font-weight: 600; }
+  .run-row .meta .stage { font-family: var(--mono); font-size: 0.78rem; color: var(--caption); }
+  .run-row .bar-block { display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-end; }
+  .run-row .bar-block .pct { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--ink-soft); }
+
+  /* ---- ledger table ---- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--caption);
+    font-weight: 600;
+  }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .table-scroll { overflow-x: auto; }
+
+  .status-fixed { color: var(--pass); font-weight: 600; }
+  .status-open { color: var(--pipeline); font-weight: 600; }
+  .status-partial { color: var(--ambiguous); font-weight: 600; }
+
+  /* ---- detail disclosure ---- */
+  details {
+    background: var(--bg-raised);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 0.9rem 1.1rem;
+    margin-bottom: 0.75rem;
+  }
+  details + details { margin-top: 0.75rem; }
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary .chev { font-family: var(--mono); color: var(--caption); transition: transform 0.15s ease; }
+  details[open] summary .chev { transform: rotate(90deg); }
+  summary .stage-tag { font-family: var(--mono); font-size: 0.75rem; color: var(--caption); font-weight: 400; }
+  .detail-body { margin-top: 0.9rem; }
+
+  footer.note {
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--caption);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 640px) {
+    .run-row { grid-template-columns: 1fr; }
+    .run-row .bar-block { align-items: flex-start; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <span class="eyebrow">ChipBench on Inspect &middot; failure-mode trajectory</span>
+    <h1>Is the score low because the model failed, or because our harness did?</h1>
+    <p class="dek">Every Llama&nbsp;3.1&nbsp;8B run to date, reclassified sample-by-sample into
+    <strong>model-capability</strong> failures and <strong>pipeline</strong> failures &mdash;
+    each pipeline failure attributed to the specific bug that caused it. Pass rate alone
+    can't show whether a fix worked; watching a bug's own bucket shrink can.</p>
+  </header>
+
+  <section id="scope">
+    <h2>What's being tested</h2>
+    <p>ChipBench is three separate tasks, each split into sub-categories, each sub-category made
+    of some number of <strong>atomic tasks</strong> &mdash; one independently-scored problem
+    instance (one row in the dataset). Every atomic task below is attempted 20 times
+    (<code>epochs=20</code>) per run to compute pass@1/5/10; a table further down reporting
+    <code>n=900</code> for <code>refmodel</code>'s 45 atomic tasks means exactly that: 45 &times;
+    20. The names in this tree (<code>self_contained</code>, <code>cpu_ip</code>, <code>zero_shot</code>,
+    etc.) are the vocabulary the rest of this report uses without re-explaining it.</p>
+
+    <ul class="tree">
+      <li>
+        <div class="tree-row">
+          <span class="tree-node"><strong>chipbench_verilog_gen</strong><span class="tree-desc">write a Verilog module from a spec</span></span>
+          <span class="tree-count">45</span>
+        </div>
+        <ul>
+          <li><div class="tree-row"><span class="tree-node">self_contained<span class="tree-desc">one complete module, nothing external needed</span></span><span class="tree-count">30</span></div></li>
+          <li><div class="tree-row"><span class="tree-node">not_self_contained<span class="tree-desc">the design depends on a submodule shown separately</span></span><span class="tree-count">6</span></div></li>
+          <li><div class="tree-row"><span class="tree-node">cpu_ip<span class="tree-desc">real CPU-component designs (ALU, register file, control unit&hellip;)</span></span><span class="tree-count">9</span></div></li>
+        </ul>
+      </li>
+      <li>
+        <div class="tree-row">
+          <span class="tree-node"><strong>chipbench_debug</strong><span class="tree-desc">fix an injected bug in an existing module</span></span>
+          <span class="tree-count">178</span>
+        </div>
+        <ul>
+          <li><div class="tree-row"><span class="tree-node">arithmetic<span class="tree-desc">wrong operator or operand in a computation</span></span><span class="tree-count">24</span></div></li>
+          <li><div class="tree-row"><span class="tree-node">assignment<span class="tree-desc">wrong signal or wrong blocking/non-blocking form</span></span><span class="tree-count">30</span></div></li>
+          <li><div class="tree-row"><span class="tree-node">state_machine<span class="tree-desc">wrong state transition or output</span></span><span class="tree-count">6</span></div></li>
+          <li><div class="tree-row"><span class="tree-node">timing<span class="tree-desc">wrong clock edge or reset polarity</span></span><span class="tree-count">29</span></div></li>
+        </ul>
+        <p class="tree-note">89 buggy problems above, each run twice &mdash; once <code>zero_shot</code>
+        (spec + buggy code only) and once <code>one_shot</code> (same, plus a VCD waveform trace) &mdash;
+        for 178 atomic tasks total.</p>
+      </li>
+      <li>
+        <div class="tree-row">
+          <span class="tree-node"><strong>chipbench_refmodel</strong><span class="tree-desc">write a Python or C++ model behaviorally equivalent to a verilog_gen module</span></span>
+          <span class="tree-count">90</span>
+        </div>
+        <ul>
+          <li><div class="tree-row"><span class="tree-node">self_contained &times; {python, cxxrtl}<span class="tree-desc">same 30 problems as above, in both target languages</span></span><span class="tree-count">60</span></div></li>
+          <li><div class="tree-row"><span class="tree-node">not_self_contained &times; {python, cxxrtl}<span class="tree-desc">same 6 problems, both languages</span></span><span class="tree-count">12</span></div></li>
+          <li><div class="tree-row"><span class="tree-node">cpu_ip &times; {python, cxxrtl}<span class="tree-desc">same 9 problems, both languages</span></span><span class="tree-count">18</span></div></li>
+        </ul>
+        <p class="tree-note">Not an independent dataset &mdash; every atomic task here reuses one of
+        <code>verilog_gen</code>'s 45 problem specs, asking for a reference model in Python or
+        CXXRTL (a C++ hardware-simulation API) instead of Verilog. A third language, SystemC, is
+        part of the paper's original benchmark but isn't scoreable with the vendored toolchain, so
+        it's excluded here.</p>
+      </li>
+    </ul>
+  </section>
+
+  <section id="headline">
+    <h3>Headline</h3>
+    <div class="cards">
+      <div class="card good">
+        <span class="label">refmodel &middot; CXXRTL &amp; Python, all 45 problems</span>
+        <span class="trend"><span class="from">93.0%</span><span class="arrow">&rarr;</span><span class="to">2.3% / 2.2%</span></span>
+        <span class="note">share of samples failing on our harness, not the model &mdash; original run to today; both languages now confirmed independently, same pattern</span>
+      </div>
+      <div class="card good">
+        <span class="label">&rlarr; self&#8209;contained category only</span>
+        <span class="trend"><span class="from">89.7%</span><span class="arrow">&rarr;</span><span class="to">0.0%</span></span>
+        <span class="note">zero pipeline failures left &mdash; every remaining failure here is now genuinely the model's</span>
+      </div>
+      <div class="card good">
+        <span class="label">&rlarr; non&#8209;self&#8209;contained category only</span>
+        <span class="trend"><span class="from">100%</span><span class="arrow">&rarr;</span><span class="to">17.5%</span></span>
+        <span class="note">finally moving &mdash; Bug 6 fixed; remainder is the still-open Verilator-strictness gap</span>
+      </div>
+      <div class="card">
+        <span class="label">bugs found / confirmed fixed</span>
+        <span class="trend"><span class="to" style="color:var(--ink)">6 / 5</span></span>
+        <span class="note">Bugs 1, 2, 3, 5, 6 fixed &amp; confirmed; one Verilator-strictness gap still open</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="trajectory">
+    <h2>The trajectory that matters more than pass@1</h2>
+    <p>Four points in time, same 45-problem CXXRTL set, tracking what share of every sample's
+    failure is <em>ours</em> (pipeline) rather than the model's (capability). This is the number
+    we're trying to drive down &mdash; not because it makes the pass rate look better, but because
+    every point still in the pipeline band is a sample that never got a fair shot at measuring
+    the model at all.</p>
+
+    <div class="chart-wrap">
+      <svg viewBox="0 0 680 340" role="img" aria-label="Pipeline-error share over four run stages, four lines: overall, self-contained, cpu_ip, non-self-contained">
+        <!-- gridlines -->
+        <g stroke="var(--rule)" stroke-width="1">
+          <line x1="70" y1="280" x2="620" y2="280" />
+          <line x1="70" y1="215" x2="620" y2="215" stroke-dasharray="2 4" />
+          <line x1="70" y1="150" x2="620" y2="150" stroke-dasharray="2 4" />
+          <line x1="70" y1="85" x2="620" y2="85" stroke-dasharray="2 4" />
+          <line x1="70" y1="20" x2="620" y2="20" stroke-dasharray="2 4" />
+        </g>
+        <g font-family="var(--mono)" font-size="10" fill="var(--caption)">
+          <text x="60" y="284" text-anchor="end">0%</text>
+          <text x="60" y="219" text-anchor="end">25%</text>
+          <text x="60" y="154" text-anchor="end">50%</text>
+          <text x="60" y="89" text-anchor="end">75%</text>
+          <text x="60" y="24" text-anchor="end">100%</text>
+        </g>
+
+        <!-- x-axis stage labels -->
+        <g font-family="var(--mono)" font-size="10.5" fill="var(--ink-soft)" text-anchor="middle">
+          <text x="80" y="305">0 &middot; original</text>
+          <text x="80" y="318" fill="var(--caption)">no fixes</text>
+          <text x="253" y="305">3 &middot; Bugs 1+2</text>
+          <text x="253" y="318" fill="var(--caption)">Bug 3 stale</text>
+          <text x="427" y="305">4 &middot; +3, 5</text>
+          <text x="427" y="318" fill="var(--caption)">Bug 6 found</text>
+          <text x="600" y="305">5 &middot; +6</text>
+          <text x="600" y="318" fill="var(--caption)">confirmed today</text>
+        </g>
+
+        <!-- not_self_contained: flat, dashed, then finally moves -->
+        <polyline points="80,20 253,24.42 427,22.08 600,234.5" fill="none" stroke="#8b2f24" stroke-width="2.5" stroke-dasharray="5 4" />
+        <!-- cpu_ip -->
+        <polyline points="80,21.56 253,106.58 427,138.56 600,282" fill="none" stroke="#a8721c" stroke-width="2.5" />
+        <!-- self_contained -->
+        <polyline points="80,46.78 253,262.9 427,262.32 600,278" fill="none" stroke="#d4791f" stroke-width="2.5" />
+        <!-- overall -->
+        <polyline points="80,38.2 253,199.92 427,205.38 600,274.02" fill="none" stroke="var(--pipeline)" stroke-width="3.5" />
+
+        <!-- dots -->
+        <g stroke="var(--bg-raised)" stroke-width="1.5">
+          <circle cx="80" cy="20" r="4" fill="#8b2f24" /><circle cx="253" cy="24.42" r="4" fill="#8b2f24" /><circle cx="427" cy="22.08" r="4" fill="#8b2f24" /><circle cx="600" cy="234.5" r="4" fill="#8b2f24" />
+          <circle cx="80" cy="21.56" r="4" fill="#a8721c" /><circle cx="253" cy="106.58" r="4" fill="#a8721c" /><circle cx="427" cy="138.56" r="4" fill="#a8721c" /><circle cx="600" cy="282" r="4" fill="#a8721c" />
+          <circle cx="80" cy="46.78" r="4" fill="#d4791f" /><circle cx="253" cy="262.9" r="4" fill="#d4791f" /><circle cx="427" cy="262.32" r="4" fill="#d4791f" /><circle cx="600" cy="278" r="4" fill="#d4791f" />
+          <circle cx="80" cy="38.2" r="5" fill="var(--pipeline)" /><circle cx="253" cy="199.92" r="5" fill="var(--pipeline)" /><circle cx="427" cy="205.38" r="5" fill="var(--pipeline)" /><circle cx="600" cy="274.02" r="5" fill="var(--pipeline)" />
+        </g>
+
+        <!-- endpoint value labels (final stage only) -->
+        <g font-family="var(--mono)" font-size="10.5" font-weight="600">
+          <text x="608" y="238" fill="#8b2f24">17.5%</text>
+          <text x="608" y="270" fill="var(--pipeline)">2.3%</text>
+        </g>
+      </svg>
+      <div class="chart-legend">
+        <span class="swatch" style="--sw-color:var(--pipeline)">overall (all 3 categories)</span>
+        <span class="swatch" style="--sw-color:#a8721c">cpu_ip</span>
+        <span class="swatch" style="--sw-color:#d4791f">self_contained</span>
+        <span class="swatch dashed" style="--sw-color:#8b2f24">non_self_contained</span>
+      </div>
+    </div>
+    <p class="chart-caption">Y-axis: share of samples classified as pipeline/infrastructure
+    failure (our harness's fault), not model capability. Lower is better and means the category's
+    pass rate is finally trustworthy. <code>self_contained</code> and <code>cpu_ip</code> both
+    reach exactly 0% at stage&nbsp;5 (their dots are jittered a couple pixels apart at the bottom
+    of the chart purely so both remain visible) &mdash; only <code>non_self_contained</code> still
+    has any pipeline share left, and that's entirely the still-open Verilator-strictness gap, not
+    Bug&nbsp;6.</p>
+  </section>
+
+  <section id="fix-isolated">
+    <h2>A controlled before/after, isolated from the rest of the trajectory</h2>
+    <p>The trajectory above is chronological — each stage is whatever bugs happened to be fixed
+    <em>at the time</em>, which is honest history but not a clean experiment. This section is a
+    deliberate two-point comparison instead: same 45 problems, same 20 epochs, same model, both
+    languages, run twice back-to-back. <strong>Before:</strong> our own faults (Bugs 1 and 2 — the
+    CXXRTL prompt and submodule staging, neither of which the paper's own tooling ever had to get
+    right) are fixed, exactly as they'd stay fixed in any real use of this harness; the paper's own
+    faults (Bugs 3, 5, 6) are deliberately reproduced — Bugs 3 and 6 by temporarily reverting
+    <code>generate_testbench.py</code>/<code>extract_ports.py</code> to their vendored originals
+    and rebuilding the Docker image, Bug 5 via a new <code>stage_missing_defines=False</code> task
+    parameter. <strong>After:</strong> everything fixed — the same runs already in the trajectory
+    above (<code>refmodel_cxxrtl_postbug6_45</code> / <code>refmodel_python_postbug6_45</code>).
+    The point: this isolates what the paper's own bugs cost, on top of a harness that's already
+    doing its own part correctly — not conflated with our own porting mistakes.</p>
+
+    <h3 style="margin-top:1.75rem">CXXRTL</h3>
+    <div class="ba-row head">
+      <span>Category (n=900 total)</span><span>Before</span><span>After</span><span>Δ pipeline</span>
+    </div>
+    <div class="ba-row">
+      <span class="ba-label">overall</span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:1.9%"></div><div class="seg capability" style="width:55.0%"></div><div class="seg pipeline" style="width:43.1%"></div></div></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:4.6%"></div><div class="seg capability" style="width:93.0%"></div><div class="seg pipeline" style="width:2.3%"></div><div class="seg unclassified" style="width:0.1%"></div></div></span>
+      <span class="ba-delta">43.1% <span class="arrow-down">&rarr; 2.3%</span></span>
+    </div>
+    <div class="ba-row">
+      <span class="ba-label">self_contained <span class="lang">n=600</span></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:2.8%"></div><div class="seg capability" style="width:82.0%"></div><div class="seg pipeline" style="width:15.2%"></div></div></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:4.8%"></div><div class="seg capability" style="width:95.2%"></div><div class="seg pipeline" style="width:0%"></div></div></span>
+      <span class="ba-delta">15.2% <span class="arrow-down">&rarr; 0.0%</span></span>
+    </div>
+    <div class="ba-row">
+      <span class="ba-label">cpu_ip <span class="lang">n=180</span></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:0%"></div><div class="seg capability" style="width:0.6%"></div><div class="seg pipeline" style="width:99.4%"></div></div></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:6.7%"></div><div class="seg capability" style="width:92.8%"></div><div class="seg pipeline" style="width:0%"></div><div class="seg unclassified" style="width:0.6%"></div></div></span>
+      <span class="ba-delta">99.4% <span class="arrow-down">&rarr; 0.0%</span></span>
+    </div>
+    <div class="ba-row">
+      <span class="ba-label">not_self_contained <span class="lang">n=120</span></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:0%"></div><div class="seg capability" style="width:1.7%"></div><div class="seg pipeline" style="width:98.3%"></div></div></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:0%"></div><div class="seg capability" style="width:82.5%"></div><div class="seg pipeline" style="width:17.5%"></div></div></span>
+      <span class="ba-delta">98.3% <span class="arrow-down">&rarr; 17.5%</span></span>
+    </div>
+
+    <h3 style="margin-top:1.75rem">Python</h3>
+    <div class="ba-row head">
+      <span>Category (n=900 total)</span><span>Before</span><span>After</span><span>Δ pipeline</span>
+    </div>
+    <div class="ba-row">
+      <span class="ba-label">overall</span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:11.0%"></div><div class="seg capability" style="width:57.9%"></div><div class="seg pipeline" style="width:31.1%"></div></div></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:12.8%"></div><div class="seg capability" style="width:84.8%"></div><div class="seg pipeline" style="width:2.2%"></div><div class="seg unclassified" style="width:0.2%"></div></div></span>
+      <span class="ba-delta">31.1% <span class="arrow-down">&rarr; 2.2%</span></span>
+    </div>
+    <div class="ba-row">
+      <span class="ba-label">self_contained <span class="lang">n=600</span></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:14.5%"></div><div class="seg capability" style="width:78.8%"></div><div class="seg pipeline" style="width:6.7%"></div></div></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:13.3%"></div><div class="seg capability" style="width:86.7%"></div><div class="seg pipeline" style="width:0%"></div></div></span>
+      <span class="ba-delta">6.7% <span class="arrow-down">&rarr; 0.0%</span></span>
+    </div>
+    <div class="ba-row">
+      <span class="ba-label">cpu_ip <span class="lang">n=180</span></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:6.7%"></div><div class="seg capability" style="width:26.7%"></div><div class="seg pipeline" style="width:66.7%"></div></div></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:17.8%"></div><div class="seg capability" style="width:81.1%"></div><div class="seg pipeline" style="width:0%"></div><div class="seg unclassified" style="width:1.1%"></div></div></span>
+      <span class="ba-delta">66.7% <span class="arrow-down">&rarr; 0.0%</span></span>
+    </div>
+    <div class="ba-row">
+      <span class="ba-label">not_self_contained <span class="lang">n=120</span></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:0%"></div><div class="seg capability" style="width:0%"></div><div class="seg pipeline" style="width:100%"></div></div></span>
+      <span class="ba-stack"><div class="stackbar mini"><div class="seg pass" style="width:2.5%"></div><div class="seg capability" style="width:80.8%"></div><div class="seg pipeline" style="width:16.7%"></div></div></span>
+      <span class="ba-delta">100% <span class="arrow-down">&rarr; 16.7%</span></span>
+    </div>
+
+    <p class="chart-caption" style="margin-top:1.25rem">Legend: <span class="pill pass">pass</span>
+    <span class="pill capability">capability</span> <span class="pill pipeline">pipeline</span>
+    <span class="pill unclassified">unclassified</span>. Every remaining <code>not_self_contained</code>
+    pipeline share in the "after" column, in both languages, is the same known quantity: the
+    Verilator-strictness gap on <code>Prob006_cpu_top</code> (20/120), not a residual porting bug —
+    it's the one thing this comparison correctly does <em>not</em> show going to zero, because it
+    was never in scope to fix. Pass rate also moves in the direction you'd hope once the noise is
+    removed (CXXRTL 1.9%&rarr;4.6%, Python 11.0%&rarr;12.8%) — not dramatically, because most of
+    what was previously hidden behind pipeline failures turns out to be genuine capability failures
+    once measured cleanly, which is itself the point: a low pass rate on a clean harness means
+    something, a low pass rate on a broken one doesn't.</p>
+    <p class="chart-caption"><strong>This report is Llama-only, but the fix itself isn't
+    Llama-specific.</strong> GPT-3.5 Turbo's refmodel runs against this same fully-fixed pipeline
+    show the identical signature in <strong>both</strong> languages independently:
+    <code>self_contained</code>/<code>cpu_ip</code> at 0% pipeline share, only
+    <code>verilator_rejects_construct</code> left in <code>not_self_contained</code> (10/450 in
+    each language, all one problem). The six bugs were all found and fixed using Llama's runs
+    alone &mdash; this is the check for whether those fixes happened to be tuned to Llama's
+    specific failure patterns. Four for four (2 models &times; 2 languages), they weren't. Full
+    numbers in <code>summary.md</code>.</p>
+  </section>
+
+  <section id="masking">
+    <h2>Why some bug counts go <em>up</em> when you fix something else</h2>
+    <p>Three times in this project, fixing one bug didn't reduce the total failure count &mdash;
+    it revealed a second bug that had been hiding underneath the first the entire time, because
+    the compiler only reports the first error it hits per sample. Reading a bucket's count rising
+    without this context looks like a regression; it isn't.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Masking bug (fixed)</th><th>Revealed underneath it</th><th class="num">Before &rarr; after (n=900)</th></tr></thead>
+        <tbody>
+          <tr><td>Bug 1 &mdash; CXXRTL API mismatch</td><td>CXXRTL name-mangling misses (capability) &amp; Bug 3</td><td class="num">3 &rarr; 319 mangling</td></tr>
+          <tr><td>Bug 2 + Bug 5 &mdash; submodule / macro staging</td><td>Bug 6 &mdash; port-extraction regex bug</td><td class="num">140 &rarr; 237 (redecl. + bad-binding)</td></tr>
+          <tr><td>Bug 5 &mdash; missing macro staging</td><td>Verilator rejects a construct in <code>Prob006_cpu_top</code></td><td class="num">0 &rarr; 20</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="ledger">
+    <h2>Bug ledger</h2>
+    <p>Every pipeline bucket, mapped to the bug that causes it, whose fault it is, and its current
+    status. <strong>"Ours"</strong> means code written to port ChipBench into this Inspect
+    implementation &mdash; <code>dataset.py</code>, <code>chipbench.py</code>, <code>scorers.py</code>,
+    the prompt-loading logic &mdash; things with no equivalent in the original repo.
+    <strong>"Paper's"</strong> means content that ships in the original ChipBench GitHub repo,
+    mirrored locally at <code>ToImplement/ChipBench/</code>. Every "paper's" row below is backed by
+    an actual <code>diff</code> against that mirror, not assumed from reading our copy alone &mdash;
+    see the note under each row.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Bug</th><th>What breaks</th><th>Whose fault</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Bug 1</td>
+            <td>CXXRTL prompt teaches a C++ API that doesn't match the pinned Yosys version</td>
+            <td><span class="attrib ours">Ours</span><span class="verified-note">Prompt template we wrote the loading/selection logic for</span></td>
+            <td class="status-fixed">Fixed &amp; confirmed (452&rarr;1 / 900)</td>
+          </tr>
+          <tr>
+            <td>Bug 2</td>
+            <td><code>not_self_contained</code>&nbsp;<code>ref.sv</code> depends on a submodule never staged as a file</td>
+            <td><span class="attrib ours">Ours</span><span class="verified-note"><code>dataset.py</code>'s <code>refmodel_samples()</code> has no upstream equivalent &mdash; the paper never ships a refmodel dataset</span></td>
+            <td class="status-fixed">Fixed &amp; confirmed (40&rarr;0 / 900)</td>
+          </tr>
+          <tr>
+            <td>Bug 3</td>
+            <td>Generated testbench references a clock that shouldn't exist for combinational circuits</td>
+            <td><span class="attrib papers">Paper&#8217;s</span><span class="verified-note">&#10003; <code>diff</code> vs. <code>generate_testbench.py</code> + <code>dut.py</code> &rarr; exit 0, byte-identical (checked against the pre-fix commit, since we've since patched it)</span></td>
+            <td class="status-fixed">Fixed &amp; confirmed &mdash; required a stale Docker image rebuild + deterministic e2e test</td>
+          </tr>
+          <tr>
+            <td>Bug 4</td>
+            <td>Models don't reliably double CXXRTL's underscores in port names</td>
+            <td><span class="attrib na">Not a bug</span><span class="verified-note">Rule is stated correctly in the paper's prompt (&#10003; verified, same diff as Bug 1) &mdash; just never exemplified with an underscored name. This row is a model-reliability finding, not a fault attribution.</span></td>
+            <td class="status-partial">Experimental mitigation only (62%&rarr;45% of failures on the 38-ID subset)</td>
+          </tr>
+          <tr>
+            <td>Bug 5</td>
+            <td><code>ref.sv</code> uses <code>`define</code> macros only written in <code>test.sv</code></td>
+            <td><span class="attrib papers">Paper&#8217;s</span><span class="verified-note">&#10003; <code>diff</code> vs. all 5 affected problems' <code>ref.sv</code> + <code>test.sv</code> &rarr; exit 0 on every file</span></td>
+            <td class="status-fixed">Fixed &amp; confirmed (100&rarr;0 / 900)</td>
+          </tr>
+          <tr>
+            <td>Bug 6a</td>
+            <td><code>extract_ports.py</code> has no module-boundary awareness</td>
+            <td><span class="attrib mixed">Mixed</span><span class="verified-note">The buggy code is the paper's (&#10003; verified below) &mdash; but it only fires because <em>our own</em> Bug 2 fix put two modules in one <code>ref.sv</code>, a file shape the paper's code never had to handle</span></td>
+            <td class="status-fixed">Fixed &amp; confirmed &mdash; 6 unit tests + 2 new e2e tests + Docker image rebuild (this file is baked in via <code>COPY</code>)</td>
+          </tr>
+          <tr>
+            <td>Bug 6b</td>
+            <td><code>extract_ports.py</code> can't parse parametrized bit-widths (<code>[DATA_WIDTH-1:0]</code>)</td>
+            <td><span class="attrib papers">Paper&#8217;s</span><span class="verified-note">&#10003; <code>diff</code> vs. <code>extract_ports.py</code> itself, and vs. the triggering file <code>Prob002_alu_ref.sv</code> &rarr; exit 0 on both. Nothing of ours is involved in triggering this one.</span></td>
+            <td class="status-fixed">Fixed &amp; confirmed (238&rarr;0 / 900 on CXXRTL; 140&rarr;0 / 900 on Python, run independently)</td>
+          </tr>
+          <tr>
+            <td>&mdash;</td>
+            <td>Verilator rejects a blocking/non-blocking assignment pattern Icarus Verilog accepts</td>
+            <td><span class="attrib papers">Paper&#8217;s</span><span class="verified-note">&#10003; <code>diff</code> vs. <code>Prob006_cpu_top_ref.sv</code> &rarr; exit 0, byte-identical, including the exact line Verilator objects to</span></td>
+            <td class="status-open">Found, not investigated further</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="runs">
+    <h2>Every run, in order</h2>
+    <p>Composition of every sample's outcome: <span class="pill pass">pass</span>
+    <span class="pill capability">capability</span> <span class="pill pipeline">pipeline</span>
+    <span class="pill ambiguous">ambiguous</span> &mdash; expand a run for its full bucket
+    breakdown.</p>
+
+    <details open>
+      <summary><span>verilog_gen &mdash; all 45 problems</span><span class="stage-tag">only run &middot; n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:4.4%"></div><div class="seg capability" style="width:91.1%"></div><div class="seg ambiguous" style="width:4.4%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">340</td><td class="num">37.8%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">182</td><td class="num">20.2%</td></tr>
+              <tr><td>named_signal_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">143</td><td class="num">15.9%</td></tr>
+              <tr><td>verilog_syntax_error</td><td><span class="pill capability">capability</span></td><td class="num">108</td><td class="num">12.0%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">40</td><td class="num">4.4%</td></tr>
+              <tr><td>unknown_module_type</td><td><span class="pill ambiguous">ambiguous</span></td><td class="num">40</td><td class="num">4.4%</td></tr>
+              <tr><td>redeclaration</td><td><span class="pill capability">capability</span></td><td class="num">34</td><td class="num">3.8%</td></tr>
+              <tr><td>no_mismatches_line</td><td><span class="pill capability">capability</span></td><td class="num">13</td><td class="num">1.4%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">No known pipeline bug for this task, and structurally, most of
+        refmodel's bug classes can't occur here at all: <code>iverilog_scorer</code> compiles
+        <code>test.sv</code> + <code>ref.sv</code> + <code>generated.sv</code> together in one
+        invocation, so anything <code>ref.sv</code> needs just has to exist somewhere among the
+        three files &mdash; unlike refmodel, which compiles <code>ref.sv</code> alone.
+        <code>unknown_module_type</code> is left ambiguous: the model instantiates a submodule it
+        never defines. Here the prompt is explicit ("you should include and instantiate in your
+        solution"), so this leans toward a real instruction-following failure rather than a task-design
+        gap &mdash; see the debug runs below for a genuinely more ambiguous version of the same prompt.
+        This report is Llama-only, but the same "zero pipeline bucket" check was re-run against
+        GPT-3.5 Turbo's <code>verilog_gen</code> completions too (see <code>summary.md</code> for
+        that model's full results) and came back clean the same way &mdash; the finding isn't
+        specific to one model.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span>debug &mdash; zero-shot, 89 problems</span><span class="stage-tag">only run &middot; n=1780</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:7.4%"></div><div class="seg capability" style="width:89.9%"></div><div class="seg ambiguous" style="width:2.8%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">1107</td><td class="num">62.2%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">202</td><td class="num">11.3%</td></tr>
+              <tr><td>verilog_syntax_error</td><td><span class="pill capability">capability</span></td><td class="num">135</td><td class="num">7.6%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">131</td><td class="num">7.4%</td></tr>
+              <tr><td>named_signal_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">125</td><td class="num">7.0%</td></tr>
+              <tr><td>unknown_module_type</td><td><span class="pill ambiguous">ambiguous</span></td><td class="num">49</td><td class="num">2.8%</td></tr>
+              <tr><td>redeclaration</td><td><span class="pill capability">capability</span></td><td class="num">17</td><td class="num">1.0%</td></tr>
+              <tr><td>no_mismatches_line</td><td><span class="pill capability">capability</span></td><td class="num">14</td><td class="num">0.8%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">Checked specifically for the parallel to refmodel's Bug 2 (some
+        of these problems provide a submodule &mdash; e.g. <code>dual_port_RAM</code>,
+        <code>decoder_38</code> &mdash; that <code>ref.sv</code> instantiates but which only the
+        model's own answer can supply). It's already fully captured in <code>unknown_module_type</code>
+        above, not hidden in capability. One real nuance, verified against the paper's own vendored
+        prompt (<code>diff</code>, exit 0): the wording here is genuinely more ambiguous than
+        verilog_gen's ("provided... you need to directly use it <strong>without any modify</strong>"
+        &mdash; readable as "already available" as much as "copy this in") &mdash; a paper's-data
+        prompt-clarity issue, not a bug in this harness. Re-checked against GPT-3.5 Turbo's
+        zero-shot completions too (n=890) &mdash; also zero pipeline bucket, same clean result.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span>debug &mdash; one-shot, 89 problems</span><span class="stage-tag">only run &middot; n=1780</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:8.0%"></div><div class="seg capability" style="width:89.0%"></div><div class="seg ambiguous" style="width:3.0%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">1117</td><td class="num">62.8%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">233</td><td class="num">13.1%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">142</td><td class="num">8.0%</td></tr>
+              <tr><td>verilog_syntax_error</td><td><span class="pill capability">capability</span></td><td class="num">105</td><td class="num">5.9%</td></tr>
+              <tr><td>named_signal_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">101</td><td class="num">5.7%</td></tr>
+              <tr><td>unknown_module_type</td><td><span class="pill ambiguous">ambiguous</span></td><td class="num">54</td><td class="num">3.0%</td></tr>
+              <tr><td>redeclaration</td><td><span class="pill capability">capability</span></td><td class="num">19</td><td class="num">1.1%</td></tr>
+              <tr><td>no_mismatches_line</td><td><span class="pill capability">capability</span></td><td class="num">9</td><td class="num">0.5%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">Same finding as zero-shot above &mdash; no hidden pipeline bug,
+        same verified prompt-ambiguity nuance.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span>refmodel CXXRTL &mdash; original, all 45 problems</span><span class="stage-tag">stage 0 &middot; n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg capability" style="width:7.0%"></div><div class="seg pipeline" style="width:93.0%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>override_signature_mismatch</td><td><span class="pill pipeline">Bug 1 (ours)</span></td><td class="num">452</td><td class="num">50.2%</td></tr>
+              <tr><td>p_clk_missing_harness_injected</td><td><span class="pill pipeline">Bug 3 (paper&#8217;s)</span></td><td class="num">105</td><td class="num">11.7%</td></tr>
+              <tr><td>missing_define_macro</td><td><span class="pill pipeline">Bug 5 (paper&#8217;s)</span></td><td class="num">100</td><td class="num">11.1%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">80</td><td class="num">8.9%</td></tr>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">60</td><td class="num">6.7%</td></tr>
+              <tr><td>p_clk_missing_model_side</td><td><span class="pill capability">capability</span></td><td class="num">59</td><td class="num">6.6%</td></tr>
+              <tr><td>modmissing_missing_submodule</td><td><span class="pill pipeline">Bug 2 (ours)</span></td><td class="num">40</td><td class="num">4.4%</td></tr>
+              <tr><td>cxxrtl_name_mangling</td><td><span class="pill capability">capability</span></td><td class="num">3</td><td class="num">0.3%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">1</td><td class="num">0.1%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">Zero passes. Bug 1 alone accounts for half of every sample;
+        mangling (Bug 4's territory) is nearly invisible here &mdash; masked, not absent.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span>refmodel CXXRTL &mdash; 38-ID subset, Bug 1 fixed only</span><span class="stage-tag">stage 1 &middot; n=760</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:1.7%"></div><div class="seg capability" style="width:65.7%"></div><div class="seg pipeline" style="width:32.6%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>cxxrtl_name_mangling</td><td><span class="pill capability">capability</span></td><td class="num">384</td><td class="num">50.5%</td></tr>
+              <tr><td>p_clk_missing_harness_injected</td><td><span class="pill pipeline">Bug 3 (paper&#8217;s)</span></td><td class="num">109</td><td class="num">14.3%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">80</td><td class="num">10.5%</td></tr>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">59</td><td class="num">7.8%</td></tr>
+              <tr><td>p_clk_missing_model_side</td><td><span class="pill capability">capability</span></td><td class="num">57</td><td class="num">7.5%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">22</td><td class="num">2.9%</td></tr>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">36</td><td class="num">4.7%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">13</td><td class="num">1.7%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">Bug 1's fix alone: 452&rarr;0 override errors on this subset,
+        but the aggregate barely moved &mdash; compilation now reaches Bugs 3 and 6 instead.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span>refmodel CXXRTL &mdash; 38-ID subset, + Bug 4 experiment</span><span class="stage-tag">stage 2 &middot; n=760</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:2.4%"></div><div class="seg capability" style="width:79.2%"></div><div class="seg pipeline" style="width:18.4%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>cxxrtl_name_mangling</td><td><span class="pill capability">capability</span></td><td class="num">305</td><td class="num">40.1%</td></tr>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">215</td><td class="num">28.3%</td></tr>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">80</td><td class="num">10.5%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">60</td><td class="num">7.9%</td></tr>
+              <tr><td>p_clk_missing_model_side</td><td><span class="pill capability">capability</span></td><td class="num">36</td><td class="num">4.7%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">46</td><td class="num">6.1%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">18</td><td class="num">2.4%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">The one clean A/B result in this whole project: mangling drops
+        384&rarr;305 with the third worked example added and nothing else changed on this subset
+        &mdash; a real but partial mitigation, not a fix.</p>
+      </div>
+    </details>
+
+    <details open>
+      <summary><span>refmodel CXXRTL &mdash; all 45, Bugs 1+2 (Bug 3 stale, Bug 5 unfound)</span><span class="stage-tag">stage 3 &middot; n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:1.9%"></div><div class="seg capability" style="width:67.3%"></div><div class="seg pipeline" style="width:30.8%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>cxxrtl_name_mangling</td><td><span class="pill capability">capability</span></td><td class="num">300</td><td class="num">33.3%</td></tr>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">221</td><td class="num">24.6%</td></tr>
+              <tr><td>missing_define_macro</td><td><span class="pill pipeline">Bug 5 (paper&#8217;s, undiscovered here)</span></td><td class="num">100</td><td class="num">11.1%</td></tr>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">99</td><td class="num">11.0%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">78</td><td class="num">8.7%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">46</td><td class="num">5.1%</td></tr>
+              <tr><td>p_clk_missing_model_side</td><td><span class="pill capability">capability</span></td><td class="num">39</td><td class="num">4.3%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">17</td><td class="num">1.9%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption"><strong>This is the run that led to finding Bug 5</strong> &mdash;
+        100 samples failing on an undefined macro, always the same 5 problems. Zero
+        harness-injected p_clk here isn't Bug 3 being fixed (the image was still stale); this
+        specific run's samples just never happened to hit the exact trigger condition.</p>
+      </div>
+    </details>
+
+    <details open>
+      <summary><span>refmodel CXXRTL &mdash; all 45, Bugs 1+2+3+5 confirmed</span><span class="stage-tag">stage 4 &middot; n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:2.9%"></div><div class="seg capability" style="width:68.4%"></div><div class="seg pipeline" style="width:28.7%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>cxxrtl_name_mangling</td><td><span class="pill capability">capability</span></td><td class="num">319</td><td class="num">35.4%</td></tr>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">206</td><td class="num">22.9%</td></tr>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">138</td><td class="num">15.3%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">99</td><td class="num">11.0%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">51</td><td class="num">5.7%</td></tr>
+              <tr><td>p_clk_missing_model_side</td><td><span class="pill capability">capability</span></td><td class="num">40</td><td class="num">4.4%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">26</td><td class="num">2.9%</td></tr>
+              <tr><td>verilator_rejects_construct</td><td><span class="pill pipeline">paper&#8217;s (unnumbered)</span></td><td class="num">20</td><td class="num">2.2%</td></tr>
+              <tr><td>override_signature_mismatch</td><td><span class="pill pipeline">Bug 1 (ours, noise)</span></td><td class="num">1</td><td class="num">0.1%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">Zero <code>missing_define_macro</code>, zero <code>MODMISSING</code>,
+        zero <code>p_clk_missing_harness_injected</code>: Bugs 2, 3, and 5 all confirmed at full
+        scale. But Bug 6 is now visible for the first time at this scale &mdash; it was always
+        there, just further down the compile than these runs ever reached before.</p>
+      </div>
+    </details>
+
+    <details open>
+      <summary><span>refmodel CXXRTL &mdash; all 45, Bugs 1+2+3+5+6 all confirmed</span><span class="stage-tag">stage 5 &middot; n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:4.6%"></div><div class="seg capability" style="width:93.0%"></div><div class="seg pipeline" style="width:2.3%"></div><div class="seg unclassified" style="width:0.1%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>cxxrtl_name_mangling</td><td><span class="pill capability">capability</span></td><td class="num">405</td><td class="num">45.0%</td></tr>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">260</td><td class="num">28.9%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">117</td><td class="num">13.0%</td></tr>
+              <tr><td>p_clk_missing_model_side</td><td><span class="pill capability">capability</span></td><td class="num">55</td><td class="num">6.1%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">41</td><td class="num">4.6%</td></tr>
+              <tr><td>verilator_rejects_construct</td><td><span class="pill pipeline">paper&#8217;s (unnumbered)</span></td><td class="num">20</td><td class="num">2.2%</td></tr>
+              <tr><td>unclassified</td><td><span class="pill unclassified">unclassified</span></td><td class="num">1</td><td class="num">0.1%</td></tr>
+              <tr><td>override_signature_mismatch</td><td><span class="pill pipeline">Bug 1 (ours)</span></td><td class="num">1</td><td class="num">0.1%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption"><strong>Bug 6 confirmed fixed at full scale.</strong> Both
+        <code>port_extraction_redeclaration</code> and <code>port_extraction_bad_binding</code>
+        (138 + 99 = 237 samples at stage 4) are now zero. <code>self_contained</code> and
+        <code>cpu_ip</code> both drop to 0% pipeline share; the only pipeline failures left are the
+        already-documented Verilator-strictness gap and one residual <code>override_signature_mismatch</code>
+        sample (0.1%, most likely a single completion that didn't follow the fixed prompt rather
+        than a Bug&nbsp;1 regression &mdash; worth a glance if it recurs at this rate again, not
+        yet worth reopening the bug over). One sample is still genuinely <code>unclassified</code>
+        rather than force-fit into a bucket. Log: <code>logs/json/12_refmodel_cxxrtl_postbug6_45.json</code>,
+        see <code>run_meta.md#refmodel_cxxrtl_postbug6_45</code>.</p>
+      </div>
+    </details>
+
+    <details open>
+      <summary><span>refmodel Python &mdash; all 45, Bugs 1+2+3+5+6 all confirmed</span><span class="stage-tag">stage 5 &middot; n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:12.8%"></div><div class="seg capability" style="width:84.8%"></div><div class="seg pipeline" style="width:2.2%"></div><div class="seg unclassified" style="width:0.2%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">703</td><td class="num">78.1%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">115</td><td class="num">12.8%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">60</td><td class="num">6.7%</td></tr>
+              <tr><td>verilator_rejects_construct</td><td><span class="pill pipeline">paper&#8217;s (unnumbered)</span></td><td class="num">20</td><td class="num">2.2%</td></tr>
+              <tr><td>unclassified</td><td><span class="pill unclassified">unclassified</span></td><td class="num">2</td><td class="num">0.2%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">This is the run that was <code>status=started</code>/incomplete
+        when first checked; it finished on a later check (900/900, pass@1 12.8%). <strong>Confirms
+        the exact same pattern as CXXRTL, independently.</strong> By category:
+        <code>self_contained</code> 0/600 pipeline (0%), <code>cpu_ip</code> 0/180 pipeline (0%, 2
+        samples genuinely unclassified rather than force-fit), <code>not_self_contained</code>
+        20/120 pipeline (16.7%) &mdash; and that 20 is entirely <code>verilator_rejects_construct</code>,
+        the same count and same root cause (<code>Prob006_cpu_top_ref.sv</code>) as CXXRTL's, since
+        Verilator's elaboration failure happens on the shared <code>ref.sv</code> regardless of
+        which language the reference model itself is written in. Zero Bug 1/2/3/5/6 buckets
+        anywhere. Log: <code>logs/json/13_refmodel_python_postbug6_45.json</code>, see
+        <code>run_meta.md#refmodel_python_postbug6_45</code>.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span>refmodel Python &mdash; original, all 45 problems</span><span class="stage-tag">stage 0 &middot; n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:11.0%"></div><div class="seg capability" style="width:57.9%"></div><div class="seg pipeline" style="width:31.1%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">481</td><td class="num">53.4%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">99</td><td class="num">11.0%</td></tr>
+              <tr><td>missing_define_macro</td><td><span class="pill pipeline">Bug 5 (paper&#8217;s, undiscovered here)</span></td><td class="num">100</td><td class="num">11.1%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">80</td><td class="num">8.9%</td></tr>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">60</td><td class="num">6.7%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">40</td><td class="num">4.4%</td></tr>
+              <tr><td>modmissing_missing_submodule</td><td><span class="pill pipeline">Bug 2 (ours)</span></td><td class="num">40</td><td class="num">4.4%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">This is the run originally reported as "self_contained and
+        cpu_ip are legitimate, unaffected by any bug." They weren't &mdash; Bug 6 was already
+        here, just not yet found.</p>
+      </div>
+    </details>
+
+    <details open>
+      <summary><span>refmodel Python &mdash; not_self_contained only, Bugs 2+5 fixed</span><span class="stage-tag">stage 4 &middot; n=120</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pipeline" style="width:100%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">80</td><td class="num">66.7%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">20</td><td class="num">16.7%</td></tr>
+              <tr><td>verilator_rejects_construct</td><td><span class="pill pipeline">paper&#8217;s (unnumbered)</span></td><td class="num">20</td><td class="num">16.7%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">100% explained, zero unclassified residue. Bugs 2 and 5 are
+        confirmed gone from this category &mdash; and it's <em>still</em> completely blocked,
+        entirely by Bug 6 and the Verilator gap. Not a single sample here has ever measured
+        model capability.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span>refmodel CXXRTL &mdash; paper-mimicking "before" (see comparison above)</span><span class="stage-tag">n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:1.9%"></div><div class="seg capability" style="width:55.0%"></div><div class="seg pipeline" style="width:43.1%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>cxxrtl_name_mangling</td><td><span class="pill capability">capability</span></td><td class="num">264</td><td class="num">29.3%</td></tr>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">142</td><td class="num">15.8%</td></tr>
+              <tr><td>p_clk_missing_harness_injected</td><td><span class="pill pipeline">Bug 3 (paper&#8217;s)</span></td><td class="num">110</td><td class="num">12.2%</td></tr>
+              <tr><td>missing_define_macro</td><td><span class="pill pipeline">Bug 5 (paper&#8217;s)</span></td><td class="num">100</td><td class="num">11.1%</td></tr>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">99</td><td class="num">11.0%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">79</td><td class="num">8.8%</td></tr>
+              <tr><td>p_clk_missing_model_side</td><td><span class="pill capability">capability</span></td><td class="num">58</td><td class="num">6.4%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">17</td><td class="num">1.9%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">31</td><td class="num">3.4%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">Constructed run, not a chronological stage: Bugs 1+2 (ours) fixed,
+        Bugs 3/5/6 (paper's/mixed) reproduced by temporarily reverting
+        <code>generate_testbench.py</code>/<code>extract_ports.py</code> and rebuilding the Docker
+        image, plus <code>stage_missing_defines=False</code>. Note no <code>verilator_rejects_construct</code>
+        here — Bug 3's reverted <code>p_clk</code> error fires first on <code>Prob006_cpu_top</code>
+        (CXXRTL only), masking the Verilator gap underneath it, the same masking pattern documented
+        below. Log: <code>logs/json/14_refmodel_cxxrtl_paper_mimicking_before.json</code>.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary><span>refmodel Python &mdash; paper-mimicking "before" (see comparison above)</span><span class="stage-tag">n=900</span></summary>
+      <div class="detail-body">
+        <div class="stackbar"><div class="seg pass" style="width:11.0%"></div><div class="seg capability" style="width:57.9%"></div><div class="seg pipeline" style="width:31.1%"></div></div>
+        <div class="table-scroll" style="margin-top:0.85rem">
+          <table>
+            <thead><tr><th>Bucket</th><th>Category</th><th class="num">n</th><th class="num">%</th></tr></thead>
+            <tbody>
+              <tr><td>logic_mismatch</td><td><span class="pill capability">capability</span></td><td class="num">481</td><td class="num">53.4%</td></tr>
+              <tr><td>pass</td><td><span class="pill pass">pass</span></td><td class="num">99</td><td class="num">11.0%</td></tr>
+              <tr><td>port_extraction_redeclaration</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">100</td><td class="num">11.1%</td></tr>
+              <tr><td>missing_define_macro</td><td><span class="pill pipeline">Bug 5 (paper&#8217;s)</span></td><td class="num">100</td><td class="num">11.1%</td></tr>
+              <tr><td>port_extraction_bad_binding</td><td><span class="pill pipeline">Bug 6 (mixed)</span></td><td class="num">80</td><td class="num">8.9%</td></tr>
+              <tr><td>other_compile_error</td><td><span class="pill capability">capability</span></td><td class="num">40</td><td class="num">4.4%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="chart-caption">Same design as CXXRTL's before-run: Bug 2 (ours) fixed, Bugs 5/6
+        (paper's/mixed) reproduced. No Bug 3 here (Python has no clock-reference concept). Compare
+        the <code>port_extraction_redeclaration</code> count (100) against the fully-original run's
+        (60, in the "original, no fixes" block above) — the missing-submodule bucket that used to
+        absorb 40 of those samples is gone now that Bug 2 is fixed, and those 40 samples fall
+        straight into Bug 6a instead, the same masking effect documented below. Log:
+        <code>logs/json/15_refmodel_python_paper_mimicking_before.json</code>.</p>
+      </div>
+    </details>
+  </section>
+
+  <section id="method">
+    <h2>Method</h2>
+    <p>Every run loaded via Inspect's own <code>inspect_ai.analysis.samples_df()</code> &mdash;
+    id, metadata, score value, and full score explanation across one or many <code>.eval</code>
+    logs in a single call, no hand-rolled log parsing. Classification on top is in
+    <code>agent_artefacts/chipbench/failure_analysis/classify.py</code>: every pattern was derived
+    from reading actual score explanations, not guessed in advance, and <code>unclassified</code>
+    is a real bucket &mdash; nothing gets silently forced into capability or pipeline just to make
+    the categories add up. <code>bug_trajectory.py</code> re-applies this classifier to all
+    fourteen runs above; the underlying counts are in <code>bug_trajectory.json</code> alongside
+    it. Every
+    run's identity (raw <code>.eval</code> log, renamed json export, model, stage) is indexed once
+    in <code>run_meta.py</code>/<code>run_meta.md</code> &mdash; that's the file to check for what
+    any given log actually was, including runs not part of this trajectory (other models, blocked
+    attempts, calibration runs).</p>
+    <p>Two disambiguations needed more than a keyword match to get right, both documented in
+    code: a <code>p_clk</code>-missing error is Bug 3 only if the circuit is actually
+    combinational (checked against each problem's own <code>ref.sv</code>, not assumed); a
+    redeclaration error is Bug 6 only if it's anchored to <code>testbench.cpp</code>, not the
+    model's own <code>generated.cc</code> &mdash; an early, looser version of this check produced
+    false positives that were caught by re-reading the raw text behind a surprising number.</p>
+  </section>
+
+  <footer class="note">
+    chipbench &middot; agent_artefacts/chipbench/failure_analysis &middot; Llama&nbsp;3.1&nbsp;8B
+    only &middot; see known-issues/refmodel-scoring-gaps.md for full bug writeups
+  </footer>
+
+</div>
