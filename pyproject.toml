@@ -126,9 +126,9 @@ module = ["add_readme_section", "generate_readmes"]
 ignore_missing_imports = true
 
 [project]
-name = "inspect-eval-template"
-description = "Template for Inspect AI evaluations"
-authors = [{ name = "Your Name" }]
+name = "inspect-eval-chipbench"
+description = "Inspect AI implementation of ChipBench: Verilog generation, debugging, and cross-language reference-model generation for AI-aided chip design"
+authors = [{ name = "Dong Chen" }]
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -151,9 +151,8 @@ dependencies = [
 ]
 
 [project.urls]
-# USER: Update these URLs
-"Source Code" = "https://github.com/your-org/your-eval"
-"Issue Tracker" = "https://github.com/your-org/your-eval/issues"
+"Source Code" = "https://github.com/Plswearpants/Inspect-Eval-ChipBench"
+"Issue Tracker" = "https://github.com/Plswearpants/Inspect-Eval-ChipBench/issues"
 
 # Register each evaluation so Inspect can discover it.
 # Example (uncomment and adapt):
@@ -182,7 +181,16 @@ dev = [
 ]
 
 [tool.check-wheel-contents]
-ignore = ["W005", "W009"]
+ignore = [
+    "W005",
+    "W009",
+    "W002",  # chipbench's debug/{zero,one}_shot_* data legitimately duplicates each
+             # problem's ref.sv/test.sv across shot/bug-type variants (and against
+             # verilog_gen/self_contained) -- the golden reference and testbench don't
+             # change between variants, only the injected bug does. No per-path
+             # exception exists in check-wheel-contents, so this is ignored globally
+             # rather than leaving the whole package-build check advisory-only.
+]
 
 [tool.uv]
 environments = [

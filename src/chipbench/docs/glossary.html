@@ -336,6 +336,11 @@
       </div>
 
       <div class="entry">
+        <dt>reference model <span class="also">(refmodel task)</span></dt>
+        <dd>Not the same thing as a "golden reference" above, despite the similar name. In <code>chipbench_refmodel</code>, this is what the <em>model being evaluated</em> is asked to produce: a Python or C++ (CXXRTL) implementation that behaves identically to a given Verilog module — the kind of cross-language model real verification teams write to cross-check a chip design. It's the submission being graded, not the answer key.</dd>
+      </div>
+
+      <div class="entry">
         <dt>stimulus</dt>
         <dd>The specific sequence of input values a testbench applies during simulation — the test cases, essentially, whether hand-written (directed) or randomly generated.</dd>
       </div>
@@ -447,6 +452,11 @@
       <div class="entry">
         <dt>scorer</dt>
         <dd>The component that judges a completion and assigns it correct/incorrect. In most evals this is a text comparison; here it's the entire compile-and-simulate pipeline covered earlier.</dd>
+      </div>
+
+      <div class="entry">
+        <dt>evaluation harness</dt>
+        <dd>The infrastructure that turns a model's raw response into a score — here, everything between "model produced some text" and "correct/incorrect": extracting the code, writing it into the sandbox, generating a testbench, compiling, simulating, and comparing against the golden reference. A bug anywhere in that chain can produce a wrong score with a completely correct model response, which is the recurring theme of this project's write-up — see the <em>staging</em> entry below for one concrete example.</dd>
       </div>
 
       <div class="entry">

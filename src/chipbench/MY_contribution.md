@@ -8,7 +8,7 @@ the narrative version, organized by *why* each change exists.
 
 ## Modified vendored files
 
-Four files were copied from the official implementation and then patched. Everything else
+Five files were copied from the official implementation and then patched. Everything else
 vendored (`data/**`, and the rest of `Tool_Box/crosslang_verify/**`) is copied verbatim,
 unmodified.
 
@@ -45,6 +45,17 @@ unmodified.
   (`reg`/`wire`/`logic`) as a bogus port name whenever it hit a non-literal width — a bug present
   in the *original* vendored file, predating anything in this port, affecting `self_contained`
   and `cpu_ip` problems too, not just the ones our own submodule-staging change touches.
+
+### `Tool_Box/crosslang_verify/tools/clk.py`
+
+- **Checks every input for a clock signal, not just the first.** The original `is_clk_signal`
+  loops over a module's inputs but `return`s unconditionally on the first iteration, so it only
+  ever checked whether the *first* port's name contained "clk" — a bug present in the *original*
+  vendored file. `Prob006_cpu_top` lists `clk` as its third input (after `inputReady`, `reset_n`),
+  so the function concluded the module wasn't sequential, and the generated testbench referenced a
+  `clk` local variable that its own (incorrectly-gated) declaration never created — another
+  100%-of-attempts block on the same problem the `BLKANDNBLK` fix above addresses, discovered only
+  once that first fix let compilation get far enough to reach this one.
 
 ## Adapters written from scratch
 

@@ -18,7 +18,7 @@ Files:
     "Tool_Box/crosslang_verify/" directory; invoked as a subprocess by
     src/chipbench/scorers.py rather than imported, and excluded from this
     project's own lint/type-check/format tooling for that reason — see the
-    exclusion comments in pyproject.toml. Four files are modified from
+    exclusion comments in pyproject.toml. Five files are modified from
     upstream, all documented in README.md's Evaluation Report and at
     the change itself:
       - src/run_verification.py's link step now also builds and links
@@ -46,6 +46,15 @@ Files:
         integers — the original regex would silently mis-extract the type
         keyword itself ("reg"/"wire"/"logic") as the port name when it hit
         a non-literal width.
+      - tools/clk.py's is_clk_signal now checks every input in the port
+        list rather than returning on the first one, which only happened
+        to work when a module's clock port was listed first. Prob006_cpu_top
+        lists clk third (after inputReady, reset_n), so the upstream
+        version misclassified it as combinational -- the generated
+        testbench then referenced a clk variable its own (incorrectly
+        gated) declaration never created, another 100%-of-attempts block
+        on this same problem, discovered only once the BLKANDNBLK fix
+        above let compilation get far enough to reach it.
   - src/chipbench/data/refmodel_prompts/gen_cxxrtl_prompt_fixed.txt  (new
     file, not vendored: a corrected variant of the upstream
     gen_cxxrtl_prompt.txt, rewriting its CXXRTL virtual-method

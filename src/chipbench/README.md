@@ -223,20 +223,21 @@ results — see "Known limitations" below). All runs via OpenRouter
   default 20) to manage cost and Docker sandbox load at this dataset scale; `pass_at_10` is exact
   at `epochs=10` (its `epochs >= k` requirement is met), but `pass_at_5`'s combinatorial average has
   fewer terms to draw from than the `epochs=20` runs, so its stderr is comparably larger.
-- **Six infrastructure bugs were found and fixed during development of this implementation**
+- **Seven infrastructure bugs were found and fixed during development of this implementation**
   (an outdated CXXRTL prompt API; missing submodule staging for `not_self_contained` refmodel
   problems; a harness testbench referencing a clock signal for combinational circuits; missing
   macro-definition staging; a vendored port-extraction script that both loses module boundaries
-  and mis-parses parametrized bit-widths; and a Verilator strictness gap on one problem's golden
-  reference, described below). All are confirmed fixed by a regression test, and the first five are
-  additionally confirmed at full dataset scale — the fix is confirmed to generalize: a second model
-  (GPT-3.5 Turbo) run against the fully-fixed pipeline in both refmodel languages shows the identical
-  clean signature as the model used to find and fix the bugs (Llama 3.1 8B), not just an artifact of
-  one model's specific failure patterns.
-- **The Verilator strictness gap (`Prob006_cpu_top`) is fixed but not yet reconfirmed at full
-  dataset scale.** `Prob006_cpu_top`'s golden reference mixes blocking/non-blocking assignments to
-  the same packed variable across `always` blocks — a pattern Icarus Verilog (`verilog_gen`/`debug`)
-  accepts but Verilator (`refmodel`) used to reject outright (`%Error-BLKANDNBLK`), blocking 100% of
+  and mis-parses parametrized bit-widths; a Verilator strictness gap on one problem's golden
+  reference; and a clock-detection helper that only checked a module's first input, described
+  below). All are confirmed fixed by a regression test, and all but the seventh are additionally
+  confirmed at full dataset scale — the fix is confirmed to generalize: a second model (GPT-3.5
+  Turbo) run against the fully-fixed pipeline in both refmodel languages shows the identical clean
+  signature as the model used to find and fix the bugs (Llama 3.1 8B), not just an artifact of one
+  model's specific failure patterns.
+- **The Verilator strictness gap (`Prob006_cpu_top`) is fixed and confirmed at full dataset
+  scale.** `Prob006_cpu_top`'s golden reference mixes blocking/non-blocking assignments to the same
+  packed variable across `always` blocks — a pattern Icarus Verilog (`verilog_gen`/`debug`) accepts
+  but Verilator (`refmodel`) used to reject outright (`%Error-BLKANDNBLK`), blocking 100% of
   `not_self_contained` refmodel attempts on this problem in both languages regardless of model
   output. Confirmed to be the paper's own unmodified data (byte-identical `diff`), not a
   dataset-construction issue. Fixed by adding `-Wno-BLKANDNBLK` to `run_verification.py`'s
@@ -244,10 +245,22 @@ results — see "Known limitations" below). All runs via OpenRouter
   change which scheduling Verilator itself elaborates it with, and since `chipbench_refmodel` has no
   other ground truth to compare against, Verilator's own interpretation *is* the golden reference
   regardless. Confirmed via a deterministic e2e regression test
-  (`test_refmodel_blkandnblk_waiver_e2e`) against the rebuilt Docker image (this file is baked in via
-  `COPY`). **The pass-rate tables below predate this fix** — a fresh full-scale run would be expected
-  to show `not_self_contained` refmodel numbers improve further, since this was the sole remaining
-  cause of its non-zero pipeline-failure share in both languages.
+  (`test_refmodel_blkandnblk_waiver_e2e`) and reconfirmed with a fresh full-scale rerun (see
+  `5-B` changelog entry) — this fix immediately exposed a **seventh** bug on the exact same
+  problem, described next.
+- **A seventh bug — `is_clk_signal` only checked a module's first input — is now fixed and
+  confirmed.** Once the Verilator fix above let `Prob006_cpu_top` compile far enough to reach the
+  testbench-build stage, every attempt on it still failed 100% of the time, now on a different
+  error: the generated testbench referenced a local `clk` variable that was never declared.
+  `tools/clk.py`'s `is_clk_signal` loops over a module's inputs but `return`s unconditionally on
+  the first iteration, so it only ever checked whether the *first* input's name contained "clk" —
+  confirmed via `diff` to be the paper's own unmodified code, not something introduced during
+  porting. `Prob006_cpu_top` lists `clk` as its third input (after `inputReady`, `reset_n`), so the
+  function incorrectly concluded the module wasn't sequential. Fixed by checking every input
+  instead of returning early; confirmed via a deterministic e2e regression test
+  (`test_refmodel_clk_detection_e2e`) and a fresh full-scale rerun. `Prob006_cpu_top` still scores
+  0% after this fix — but now on genuine model-generated-code errors (syntax mistakes, functional
+  mismatches), confirmed by inspecting the actual failure text, not a harness block.
 
 ### Results
 
@@ -280,11 +293,14 @@ vs. paper Table 2, full pass@1/5/10:
 | DeepSeek R1 (10 epochs) | 27.1(5.63)% / 23.7% | 40.6(7.20)% / 33.7% | 42.2(7.45)% / 38.2% |
 | GPT-3.5 Turbo (10 epochs) | 18.4(5.18)% / 8.15% | 24.2(6.42)% / 12.59% | 24.4(6.48)% / 12.59% |
 
-Non-self-contained (hierarchical) designs reproduce the paper's specific finding of a **flat 0%
-pass rate across all three models** exactly. Self-contained modules track the same order of
-magnitude for every model. CPU IP components consistently score higher in our runs than the
-paper's, for all three models — the one discrepancy here that looks structural rather than
-incidental (see below).
+Llama 3.1 8B and GPT-3.5 Turbo reproduce the paper's exact 0% on non-self-contained (hierarchical)
+designs; DeepSeek R1 does not follow that pattern — it scores substantially above zero on both
+sides (paper: 33.3%/50%/50% pass@1/5/10; ours: 18.3%/45.8%/50.0%), close to an exact match on the
+paper's own non-zero DeepSeek result there. Self-contained modules track the same order of
+magnitude for every model. CPU IP components show a similar split rather than a uniform effect:
+DeepSeek R1 and GPT-3.5 Turbo score substantially higher than the paper, while Llama 3.1 8B
+actually scores *lower* at pass@1 (7.22% vs. 22.2%) and converges to the paper's exact figure by
+pass@10 (22.2% both sides) — not a blanket "we score everyone higher" effect (see below).
 
 #### `chipbench_debug`
 
@@ -348,16 +364,39 @@ vs. paper Table 3 (Python only; no published CXXRTL/SystemC numbers exist), full
 CXXRTL has no published comparison to make — the paper reports Table 3 for Python only, despite
 CXXRTL being part of its stated three-language methodology (44×3=132 samples).
 
+**`not_self_contained` category, reconfirmed with a fresh targeted rerun after the seventh fix**
+(the 6 `not_self_contained` problems only, both fixes live, both languages, matching epoch counts):
+
+| Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
+|---|---|---|---|
+| Llama 3.1 8B, Python | 0.83(0.83)% / 0% | 4.17(4.17)% / 0% | 8.33(8.33)% / 0% |
+| GPT-3.5 Turbo, Python | 11.67(8.33)% / 0% | 29.56(18.91)% / 0% | 33.33(21.08)% / 0% |
+| Llama 3.1 8B, CXXRTL | 0.00(0.00)% | 0.00(0.00)% | 0.00(0.00)% |
+| GPT-3.5 Turbo, CXXRTL | 0.00(0.00)% | 0.00(0.00)% | 0.00(0.00)% |
+
+`Prob006_cpu_top` itself still scores 0% in all four reruns (40/40 Python epochs, 30/30 CXXRTL
+epochs), but confirmed via the actual failure text to now be genuine model-generated-code errors
+(syntax mistakes, functional mismatches) rather than either harness bug — both the `BLKANDNBLK`
+and the `clk`-not-declared signatures are absent from every one of these samples. The Llama/GPT-3.5
+Python swing in opposite directions from the pre-seventh-fix numbers (Llama down, GPT-3.5 up) is
+consistent with sampling noise at this scale (6 problems, each independently re-sampled from the
+model) rather than an effect of the fix itself — CXXRTL remains at a flat 0% for both models with
+or without `Prob006`, which may be genuine capability difficulty (CXXRTL is the harder language
+throughout this document) rather than a further harness issue, but hasn't been specifically
+investigated.
+
 The most notable finding here: **the paper reports a flat 0% on both `non_self_contained` and
 `cpu_ip`, for every model in Table 3 including both Llama 3.1 8B and GPT-3.5 Turbo** — while our
-fixed harness scores well above 0% on both categories, for both models (e.g. CPU IP: Llama
-17.8→44.4%, GPT-3.5 34.4→44.4% across pass@1→10). Since this implementation independently found
-and fixed a missing-submodule-staging bug that would produce exactly this symptom (100% blocked
-regardless of model quality) in its own port — and the paper never shipped its original harness for
-direct comparison — the most likely explanation is that the paper's own tooling has an equivalent,
-unfixed bug, not that these categories are universally unsolvable. This is circumstantial (the
-paper's original code isn't available to test directly) but is now backed by two independent models
-both hitting exactly 0% on exactly the two categories a missing-submodule-staging bug would block.
+fixed harness scores above 0% on both categories, for both models (e.g. CPU IP: Llama 17.8→44.4%,
+GPT-3.5 34.4→44.4% across pass@1→10). We independently found and fixed a missing-submodule-staging
+bug in our own port that would produce exactly this symptom (100% blocked regardless of model
+quality) — but that gap is an artifact of our own port's architecture (isolating `ref.sv`
+compilation), not something confirmed present in the paper's own code the way the CXXRTL prompt,
+port-extraction, and `is_clk_signal` bugs are (each `diff`-confirmed verbatim in the paper's
+repository). Our current estimate is that an analogous harness issue in the paper's own tooling is
+more likely than these categories being genuinely unsolvable — but since the paper never shipped
+its original harness for direct comparison, this remains a specific, falsifiable hypothesis, not a
+confirmed finding.
 
 ### Reproducibility information
 
@@ -409,6 +448,19 @@ uv run inspect eval src/chipbench/chipbench.py@chipbench_refmodel \
 are both justified above under "Known limitations." All other parameters use task defaults.
 
 ## Changelog
+
+### `5-B` (July 2026)
+
+A seventh infrastructure bug, found while reconfirming the sixth: `tools/clk.py`'s
+`is_clk_signal` only checked a module's first input for a clock signal (an unconditional early
+`return` inside the loop), so `Prob006_cpu_top` — which lists `clk` third, after `inputReady` and
+`reset_n` — was misclassified as combinational, leaving its generated testbench referencing a
+`clk` variable that was never declared. Confirmed via `diff` to be the paper's own unmodified
+code. Fixed by checking every input instead of returning early; confirmed via a deterministic e2e
+regression test (`test_refmodel_clk_detection_e2e`) and a fresh full-scale rerun of the affected
+`not_self_contained` category (see the Evaluation Report above). The sixth (Verilator strictness)
+fix is also reconfirmed at full scale in this same rerun. Bumped `N` (scoring-affecting fix); no
+interface change, so `X` is unchanged.
 
 ### `4-B` (July 2026)
 

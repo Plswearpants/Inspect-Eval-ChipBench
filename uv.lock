@@ -859,7 +859,7 @@ wheels = [
 ]
 
 [[package]]
-name = "inspect-eval-template"
+name = "inspect-eval-chipbench"
 source = { editable = "." }
 dependencies = [
     { name = "inspect-ai" },

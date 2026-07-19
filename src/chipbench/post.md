@@ -1,539 +1,344 @@
-# ChipBench: An Inspect AI Evaluation for AI-Aided Chip Design
+# Porting ChipBench to Inspect AI Revealed Seven Evaluation-Harness Bugs
 
 **What it measures:** whether LLMs can write, debug, and model digital hardware (Verilog) —
 correctness is checked by real circuit simulation, not by comparing text.
 **Paper:** [arXiv:2601.21448](https://arxiv.org/abs/2601.21448) · **Original code:**
 [github.com/zhongkaiyu/ChipBench](https://github.com/zhongkaiyu/ChipBench)
 
-## TL;DR
+*Unfamiliar term? This post uses some hardware-design vocabulary (RTL, CXXRTL, golden reference, …)
+and some Inspect/eval vocabulary (pass@k, evaluation harness, sandbox, …) that not every reader will
+have both halves of. See [`docs/glossary.html`](docs/glossary.html) for one-line definitions of
+everything used here, from either side.*
 
-Standardized, adversarially-validated evaluation matters more here than in most domains: as
-frontier models edge toward writing and debugging the hardware they will eventually run on,
-un-gameable, non-saturated benchmarks of that specific capability are how we monitor
-self-recursive progress — a model quietly improving the substrate it runs on — rather than being
-blindsided by it. This document ports ChipBench (Verilog generation, debugging, and cross-language
-reference-model generation) into Inspect AI, validates that its scoring can't be fooled by a
-plausible-looking wrong answer, and reproduces the original paper's numbers across three models.
-Most of the actual effort went into the evaluation harness, not model prompting: six infrastructure
-bugs (five in our own port, one in the vendored toolbox we reused) were found and fixed, each
-producing a clean-looking near-0% score that had nothing to do with model capability — fixing all
-six dropped the harness's own pipeline-failure share from 43–93% to ~2% on the affected categories,
-confirmed at full dataset scale and shown to generalize to a second model rather than being an
-artifact of the model used to find the bugs.
+## Abstract
+
+Recursive AI development may depend not only on increasingly autonomous software research but also on progress through hardware-design bottlenecks. Evaluating model capabilities in these areas is therefore important for assessing the pace and risks of recursive capability improvement. We port ChipBench—covering Verilog generation, debugging, and cross-language reference-model generation—to the Inspect Evals framework, validate its evaluation harness, and compare results across Llama 3.1 8B, GPT-3.5 Turbo, and Gemini 3 flash. During this process, we identify several bugs in the `chipbench_refmodel` pipeline affecting approximately 40 of 90 problems, causing model outputs to be incorrectly marked as failures because of errors in the evaluation infrastructure. Fixing these bugs reduces the harness-failure rate from 43–93% to approximately 2% in the affected categories and increases pass@1 by more than 10 percentage points for some models. These results show that harness failures can systematically produce false-negative labels, underestimate model capabilities, and potentially distort conclusions drawn from other tool-based benchmarks.
+
 
 **Status:** all three tasks (`chipbench_verilog_gen`, `chipbench_debug`, `chipbench_refmodel`)
-implemented, tested (54 unit/e2e tests, full pipeline validated against a real Docker toolchain),
-and reproduced against two to three models each. All six known infrastructure bugs are fixed and
-regression-tested. Submitted to the [Inspect Evals
-Register](https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/EVAL_REGISTER.md).
+implemented, tested (60 unit/e2e tests, full pipeline validated against a real Docker toolchain),
+and reproduced against two to three models each. Seven known infrastructure bugs are fixed and regression-tested. Submitted to the [Inspect Evals Register](https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/EVAL_REGISTER.md).
+
+  
 
 ## Why this benchmark
 
-Existing Verilog benchmarks are largely saturated — state-of-the-art models exceed 95% pass
-rates on them, and their problems (10-76 lines of code, no submodules) look nothing like real
-industrial chip design. ChipBench's problems are ~4x longer and ~14x more complex by cell count,
-and the best model in the original paper (Claude Opus 4.5) solves only 30.7% of its Verilog
-generation problems on the first attempt. It also uniquely covers two capabilities existing
-benchmarks skip entirely: **fixing bugs** in existing Verilog, and **generating reference models**
-in other languages (Python/C++) that industrial verification teams use to cross-check hardware
-designs before manufacturing.
+Existing Verilog benchmarks are largely saturated — state-of-the-art models exceed 95% pass rates on them, and their problems (10-76 lines of code, no submodules) look nothing like real industrial chip design. ChipBench's problems are ~4x longer and ~14x more complex by cell count, and the best model in the original paper (Claude Opus 4.5) solves only 30.7% of its Verilog generation problems on the first attempt. It also uniquely covers two capabilities existing benchmarks skip entirely: **fixing bugs** in existing Verilog, and **generating reference models** in other languages (Python/C++) that industrial verification teams use to cross-check hardware designs before manufacturing.
 
+  
 ## What we built
 
 An Inspect AI implementation covering all three of ChipBench's tasks:
-
 - **`chipbench_verilog_gen`** — write a Verilog module from a specification.
 - **`chipbench_debug`** — fix an injected bug (arithmetic, assignment, timing, or state-machine)
-  in an existing module, with or without a waveform trace to help.
+in an existing module, with or without a waveform trace to help.
 - **`chipbench_refmodel`** — write a functionally equivalent Python or C++ model of a Verilog
-  module.
+module.
 
-The key design principle carried over from the original benchmark: **scoring is never a text
-comparison.** Every submission is actually compiled and simulated against a trusted "golden"
-reference implementation, driving the same test inputs into both and checking that their outputs agree — cycle by cycle, for hundreds of test vectors including deliberately random ones. A model could write completely different-looking code from the reference and still score correctly, as long as it behaves identically; conversely, code that merely *looks* plausible but behaves differently gets caught immediately. This runs inside an isolated, purpose-built toolchain (Icarus Verilog, Verilator, and Yosys) so that untrusted, LLM-generated code never executes directly on the host machine.
-
-## Validation before trusting any numbers
-
-Before treating any score as meaningful, we specifically tested that the checker can't be
-fooled: a deliberately wrong, do-nothing submission was fed through the real pipeline and
-confirmed to fail. We also validated against an actual model response — one with the kind of surrounding explanation, multiple code snippets, and formatting a real LLM produces — and confirmed the pipeline correctly extracts and judges the intended answer regardless of that surrounding noise.
+The key design principle carried over from the original benchmark: every submission is compiled and simulated against a trusted "golden" reference implementation, driving the same test inputs into both and checking that their outputs agree — cycle by cycle, for hundreds of test vectors. A model could write completely different-looking code from the reference and still score correctly, as long as it behaves identically under tests. The whole pipeline runs inside an isolated, purpose-built toolchain (Icarus Verilog, Verilator, and Yosys) so that untrusted, LLM-generated code never executes directly on the host machine.
 
 ## Results vs. the published paper
 
-Our own results throughout this section are shown as **mean(stderr)**, both to 3 significant
-figures — e.g. `4.44(1.94)%` means a mean pass rate of 4.44% with a standard error of 1.94
-percentage points across the problem population. The paper does not report error bars, so only
-our side of each table carries one.
+We ran this benchmark against models spanning small-open to frontier — Llama&nbsp;3.1&nbsp;8B,
+GPT-3.5&nbsp;Turbo, and Gemini&nbsp;3&nbsp;Flash on all three tasks, plus DeepSeek&nbsp;R1 on Verilog
+generation — and compared every task against the numbers in the original paper (which itself reports
+14 models, so several of ours have a direct paper baseline). The point of the exercise is validation:
+if the Inspect port faithfully reproduces the benchmark, our numbers should track the paper's, and
+where they *don't*, the divergence should be explainable rather than mysterious. Throughout, our own
+figures are shown as **mean(stderr)** — a 4.44% pass rate with a ±1.94-point standard error, say —
+while the paper reports point estimates with no error bars.
+
+The high-level picture, across all three tasks and all pass@k thresholds for multiple models:
+
+![Grouped bar chart of our pass@1/5/10 against the paper's published numbers, for every model on each of the three tasks, with error bars on our own results](figures/results_vs_paper.png)
+
+We evaluate the accuracy over 3 tasks against a small open source model llama 3.1 8b, a medium tier model GPT 3.5 Turbo and a frontier model Gemini 3 flash. Across different models, the benchmark accuracy does increase with general model capability. Notably, compared with the paper, our evaluation shows higher accuracies consistently across all models in all 3 tasks, with an exceptionally higher pass rate in task 3. While for task 1 and 2 we utilized the exactly same evaluation harness, several bugs were identified in the task 3 evaluation pipeline from the original paper's repositiory. After debugging the harness iteratively, we removed all pipeline-related failures; and the accuracy increased dramatically across all models. We elaborate each task in the following subsections with a task description, the detailed sub-tasks performance comparison; specifically, after the chipbench_refmodel task section, we elaborate how we debug the evaluation with ab iterativly developed failure classifier. 
 
 ### `chipbench_verilog_gen`
 
-As a first reproduction check, we ran two of the paper's own models against the full
-Verilog-generation dataset and compared against its published numbers (Table 2).
+**The task.** Given a natural-language module specification, the model writes a Verilog
+implementation, scored by compiling it against the golden reference's testbench in Icarus Verilog and
+comparing outputs cycle-by-cycle.
 
-**Llama 3.1 8B** (a small, cheap model):
+![Faceted bar chart: verilog_gen pass@1 by problem category, ours vs. paper, one panel per model](figures/verilog_gen_categories.png)
 
-| | pass@1 | pass@5 | pass@10 |
-|---|---|---|---|
-| **Our run (all 45 problems)** | 4.44(1.94)% | 11.3(4.15)% | 14.3(4.86)% |
-| **Paper** | 7.0% | 8.2% | 9.3% |
+The single cleanest reproduction in this whole study lives in the middle bar of every panel:
+**non-self-contained (hierarchical) designs.** The two weaker models, Llama&nbsp;3.1&nbsp;8B and
+GPT-3.5&nbsp;Turbo, reproduce the paper's flat 0% exactly — neither solves a single hierarchical
+problem, matching the paper's claim that smaller models can't yet assemble multi-module designs. The
+two strong models are the informative contrast: DeepSeek&nbsp;R1 (18.3% pass@1, 50% pass@10) and
+Gemini&nbsp;3&nbsp;Flash (31.7% pass@1) both *can* do them, and both land close to the paper's own
+figures for those exact models — DeepSeek's pass@10 matches at 50%, and Gemini's 31.7% sits right on
+the paper's 33.3%. So the 0% is a capability floor for weak models, not an artifact of the task; and
+where a model clears that floor, our numbers track the paper's.
 
-Broken down by the three problem categories that make up that aggregate:
-
-| Category | n (ours / paper) | pass@1/@5/@10 (ours) | pass@1/@5/@10 (paper) |
-|---|---|---|---|
-| Self-contained modules | 30 / 29 | 4.50(2.32)% / 11.9(5.30)% / 14.8(6.30)% | 10% / 13.3% / 20% |
-| Non-self-contained (hierarchical) designs | 6 / 5 | 0.00(0.00)% / 0.00(0.00)% / 0.00(0.00)% | 0% / 0% / 0% |
-| CPU IP components | 9 / 9 | 7.22(6.02)% / 16.6(10.9)% / 22.2(12.1)% | 22.2% / 22.2% / 22.2% |
-
-The hierarchical-design row is the strongest signal here: our run reproduces the paper's finding
-*exactly* — 0% pass rate, both sides — confirming the paper's specific claim that today's small
-models cannot yet handle this style of real-world, modular hardware design. On CPU IP components,
-our run converges to the same eventual ceiling the paper reports (roughly 2 of 9 problems solvable
-at all, since pass@10 lands at 22.2% both sides) even though the two runs differ in how reliably
-the model gets there per attempt (pass@1 differs more) — a plausible effect of running the same
-model through a different hosting provider than the paper used. Self-contained modules track the
-same order of magnitude but without an exact match on any single metric.
-
-**DeepSeek R1** (a much larger reasoning model, run at a reduced 10 attempts per problem rather
-than the usual 20, to manage cost and infrastructure load):
-
-| | pass@1 | pass@5 | pass@10 |
-|---|---|---|---|
-| **Our run (all 45 problems)** | 27.1(5.63)% | 40.6(7.20)% | 42.2(7.45)% |
-| **Paper** | 23.7% | 33.7% | 38.2% |
-
-Broken down the same way:
-
-| Category | n (ours / paper) | pass@1/@5/@10 (ours) | pass@1/@5/@10 (paper) |
-|---|---|---|---|
-| Self-contained modules | 30 / 29 | 28.0(7.05)% / 41.8(8.91)% / 43.3(9.20)% | 26.7% / 40% / 53.3% |
-| Non-self-contained (hierarchical) designs | 6 / 5 | 18.3(9.10)% / 45.8(20.7)% / 50.0(22.4)% | 33.3% / 50% / 50% |
-| CPU IP components | 9 / 9 | 30.0(15.1)% / 33.3(16.7)% / 33.3(16.7)% | 11.1% / 11.1% / 11.1% |
-
-A much stronger showing overall, as expected for a frontier reasoning model — and notably, unlike
-Llama 3.1 8B, DeepSeek R1 *can* solve some hierarchical designs: our pass@10 for that category
-(50.0%) matches the paper's reported figure (50%) exactly, and pass@1/@5 land close by too. The
-one category that didn't reproduce cleanly is CPU IP components, where our run scored roughly 3x
-higher than the paper across all three metrics — plausibly because OpenRouter serves a more
-recently updated version of this actively-maintained model than whatever exact snapshot the paper
-tested, though a small problem count in that category (9 problems, where each single problem is
-worth 11.1 percentage points) means some of this could simply be sampling noise rather than a real
-capability difference.
-
-**GPT-3.5 Turbo** (run at the same reduced 10 attempts per problem as DeepSeek R1, for the same
-cost/infrastructure reasons — see the note on Docker resource exhaustion below):
-
-| | pass@1 | pass@5 | pass@10 |
-|---|---|---|---|
-| **Our run (all 45 problems)** | 18.4(5.18)% | 24.2(6.42)% | 24.4(6.48)% |
-| **Paper (Table 2)** | 8.15% | 12.59% | 12.59% |
-
-Broken down by category:
-
-| Category | n (ours / paper) | pass@1/@5/@10 (ours) | pass@1/@5/@10 (paper) |
-|---|---|---|---|
-| Self-contained modules | 30 / 29 | 19.0(6.31)% / 26.3(8.11)% / 26.7(8.21)% | 13.3% / 26.7% / 26.7% |
-| Non-self-contained (hierarchical) designs | 6 / 5 | 0.00(0.00)% / 0.00(0.00)% / 0.00(0.00)% | 0% / 0% / 0% |
-| CPU IP components | 9 / 9 | 28.9(14.7)% / 33.3(16.7)% / 33.3(16.7)% | 11.1% / 11.1% / 11.1% |
-
-Non-self-contained is now an exact 0% match across **all three** models tested — the strongest,
-most consistent single reproduction in this whole exercise. Self-contained's pass@5/@10 also land
-almost exactly on the paper's figures (26.3% vs. 26.7%, 26.7% vs. 26.7%). CPU IP is again the
-outlier, scoring roughly 2.5-3x the paper's flat 11.1% — the same direction and rough magnitude as
-both Llama 3.1 8B and DeepSeek R1's CPU IP discrepancy above, which starts to look less like
-per-model noise and more like a systematic difference between this implementation and the paper's
-own CPU IP evaluation specifically (a different serving backend wouldn't explain the same-direction
-effect recurring across three unrelated models) — worth investigating directly rather than
-attributing to sampling noise a third time.
-
-**A confirmed, unrelated infrastructure issue surfaced getting this run to complete.** GPT-3.5
-Turbo had never had a successful run on this project — three earlier attempts, and this one,
-crashed on Docker resource exhaustion. Investigating turned up the actual root cause: 7 containers
-from the very first attempts on 2026-07-05 had been running continuously for 6 days, never torn
-down, alongside 37 accumulated per-run images (18.9GB) — Inspect's own sandbox cleanup had been
-silently failing since day one of this project, not a transient network issue as first assumed.
-Cleaned up (containers removed, orphaned images/networks/build-cache pruned, the fixed
-`chipbench-default` image left untouched) and resumed via `inspect eval-retry` from the exact point
-it crashed (313/450 samples already logged) rather than restarting from scratch.
-
-Overall: all three runs land in the same order of magnitude as the paper, with several exact or
-near-exact matches on the paper's specific findings (0% on hierarchical designs for every model
-tested, partial success on hierarchical designs for the reasoning model) — a solid signal that
-the implementation faithfully reproduces the original benchmark's behavior, alongside honest,
-specific discrepancies rather than a uniformly "close enough" hand-wave. CPU IP's now-three-model
-pattern is the one finding here that looks structural rather than incidental.
+The one consistent *divergence* is CPU IP components, and it's worth stating precisely rather than as
+a blanket claim. Three of the four models — DeepSeek, GPT-3.5, and Gemini — score roughly 2–3× the
+paper there (Gemini 49.4% vs. 22.2%), while Llama alone scores *lower* than the paper at pass@1 (7.2%
+vs. 22.2%) before converging to its exact figure by pass@10. So it isn't "we score everyone higher";
+it's a category-specific gap that now recurs across three unrelated models spanning mid-tier to
+frontier, which makes it look structural — worth a targeted look — rather than sampling noise.
 
 ### `chipbench_debug`
 
-Ran Llama 3.1 8B on the **zero-shot** half of the debugging dataset only (89 problems — module
-description plus buggy code, no waveform trace), at the full 20 epochs, and compared against the
-paper's Table 4. One caveat worth stating plainly: the paper's Table 4 does not explicitly state
-whether it reports zero-shot, one-shot, or a combination of both (its zero-shot-vs-one-shot
-comparison is instead described narratively in a separate section, via a figure rather than a
-table) — so this comparison assumes Table 4 is zero-shot or a reasonable proxy for it, not a
-confirmed apples-to-apples match the way the `verilog_gen` comparison is.
+**The task.** Given a Verilog module with one injected bug — arithmetic, assignment, timing, or
+state-machine — optionally alongside a waveform trace of the buggy behavior, the model produces a fix,
+scored the same way via Icarus Verilog simulation against the golden reference.
 
-| | pass@1 | pass@5 | pass@10 |
-|---|---|---|---|
-| **Our run (89 zero-shot problems)** | 7.36(1.58)% | 21.1(3.37)% | 29.6(4.12)% |
-| **Paper (Table 4, Average)** | 7.77% | 14.7% | 22.9% |
+![Faceted bar chart: debug pass@1 by injected bug type (zero-shot), ours vs. paper, one panel per model](figures/debug_bugtypes.png)
 
-Broken down by bug type:
+Here the reproduction is looser, and honestly so: the paper's Table&nbsp;4 doesn't state whether it
+reports zero-shot, one-shot, or a blend, so we treat it as a zero-shot proxy rather than a confirmed
+match. The ordering by capability is clean — Gemini&nbsp;3&nbsp;Flash is the strongest debugger (40.8%
+pass@1, above the paper on every bug type), GPT-3.5 sits in the middle (21.1% vs. the paper's 10.0%),
+and Llama is weakest, landing almost exactly on the paper at pass@1 (7.36% vs. 7.77%). The gap between
+our numbers and the paper's is mostly a pass@1 effect, though: by pass@5/pass@10 Gemini's paper
+figures (51.8% / 52.8%) essentially match ours (49.0% / 51.9%). No single bug type reproduces as
+tightly as verilog_gen's hierarchical category did — the closest is state-machine, which is also the
+smallest and noisiest bucket (only 6 problems, hence the wide error bars).
 
-| Bug type | n | pass@1/@5/@10 (ours) | pass@1/@5/@10 (paper) |
-|---|---|---|---|
-| Arithmetic | 24 | 5.21(2.10)% / 17.9(5.78)% / 26.9(7.27)% | 4.17% / 8.33% / 20.8% |
-| Assignment | 30 | 10.5(3.12)% / 29.0(6.69)% / 38.6(7.77)% | 3.33% / 23.3% / 36.7% |
-| State machine | 6 | 14.2(13.2)% / 20.8(16.4)% / 25.0(17.1)% | 16.7% / 16.7% / 16.7% |
-| Timing | 29 | 4.48(1.78)% / 15.6(5.03)% / 23.4(6.89)% | 6.90% / 10.3% / 17.2% |
-
-Aggregate pass@1 lands very close to the paper's (7.36% vs. 7.77%), while pass@5 and pass@10 come
-in meaningfully higher on our side (21.1% vs. 14.7%, and 29.6% vs. 22.9%) — the opposite direction
-from `verilog_gen`, where our Llama numbers were mostly *lower* than the paper's. No bug type
-matches as cleanly as `verilog_gen`'s hierarchical-design category did; State machine (n=6, the
-smallest and noisiest bug type — stderr up to ±17 points) is the closest at pass@1. Given the
-zero-shot/one-shot ambiguity in what Table 4 actually represents, this comparison is treated as a
-looser sanity check than the `verilog_gen` one, not a confirmed reproduction.
-
-**Does giving the model a waveform trace actually help?** We then ran the same model on the
-**one-shot** half (same 89 problems, plus the buggy module's `.vcd` waveform dump in the prompt)
-to answer this directly — this is exactly the question the paper's own §3.3 investigates (finding
-"mixed performance: one-shot outperforms zero-shot on 8 models but underperforms on 13" across
-their full model set). The paper doesn't publish exact per-model numbers for this comparison
-(it's presented as a figure, not a table), so this is a self-contained comparison within our own
-data rather than a reproduction of a specific paper figure:
-
-| | pass@1 | pass@5 | pass@10 |
-|---|---|---|---|
-| **Zero-shot** | 7.36(1.58)% | 21.1(3.37)% | 29.6(4.12)% |
-| **One-shot** | 7.98(1.60)% | 22.9(3.56)% | 31.1(4.30)% |
-
-| Bug type | n | Zero-shot pass@1/@5/@10 | One-shot pass@1/@5/@10 |
-|---|---|---|---|
-| Arithmetic | 24 | 5.21(2.10)% / 17.9(5.78)% / 26.9(7.27)% | 7.08(2.92)% / 19.9(6.95)% / 25.9(8.11)% |
-| Assignment | 30 | 10.5(3.12)% / 29.0(6.69)% / 38.6(7.77)% | 11.5(3.52)% / 30.9(6.55)% / 42.1(7.83)% |
-| State machine | 6 | 14.2(13.2)% / 20.8(16.4)% / 25.0(17.1)% | 7.50(7.50)% / 16.2(16.2)% / 16.7(16.7)% |
-| Timing | 29 | 4.48(1.78)% / 15.6(5.03)% / 23.4(6.89)% | 5.17(1.71)% / 18.6(5.48)% / 27.0(7.08)% |
-
-For Llama 3.1 8B, one-shot is a modest net improvement in the aggregate (up on all three
-metrics) — but that aggregate hides a genuine split by bug type, echoing the paper's "mixed"
-finding at the level of individual models rather than contradicting it: **Arithmetic, Assignment,
-and Timing all improve** with the waveform trace (Assignment's pass@10 climbs from 38.6% to
-42.1%), while **State machine gets worse** (pass@1 nearly halves, 14.2% → 7.50%) — though State
-machine's n=6 and correspondingly large stderr (±7-17 points) makes that single category the
-least trustworthy read of the four. Taken together: this model does appear to extract some
-signal from waveform data on most bug types, but not reliably enough to call it an unambiguous
-win, consistent with the paper's broader claim that most current LLMs aren't yet good at
-waveform-aware debugging.
-
-**GPT-3.5 Turbo** (zero-shot only — a one-shot attempt crashed on `context_length_exceeded`: this
-model's 16,385-token window can't always fit a full VCD waveform trace plus prompt, a genuine
-model/task incompatibility rather than a harness bug, so one-shot is out of scope for this model):
-
-| | pass@1 | pass@5 | pass@10 |
-|---|---|---|---|
-| **Our run (89 zero-shot problems)** | 21.1(3.51)% | 34.2(4.84)% | 37.1(5.15)% |
-| **Paper (Table 4, Average)** | 10.0% | 21.25% | 26.25% |
-
-Broken down by bug type:
-
-| Bug type | n | pass@1/@5/@10 (ours) | pass@1/@5/@10 (paper) |
-|---|---|---|---|
-| Arithmetic | 24 | 29.6(7.81)% / 44.1(10.0)% / 45.8(10.4)% | 16.67% / 25% / 25% |
-| Assignment | 30 | 32.3(6.76)% / 49.1(9.14)% / 50.0(9.28)% | 6.67% / 26.67% / 46.67% |
-| State machine | 6 | 15.0(15.0)% / 16.7(16.7)% / 16.7(16.7)% | 16.67% / 33.33% / 33.33% |
-| Timing | 29 | 3.79(1.60)% / 14.2(5.50)% / 20.7(7.66)% | 0% / 0% / 0% |
-
-Our GPT-3.5 numbers run consistently *higher* than the paper's across every metric and every bug
-type except Timing (where the paper reports a flat 0% and ours, while low, isn't quite zero) — the
-same higher-than-paper direction seen in `verilog_gen`'s GPT-3.5 comparison above, now on a second
-task. State machine (n=6) is the closest match on pass@1, same as it was for Llama. Timing's flat
-0% in the paper across an entire bug-type category, for the model with the smallest context
-window of the three tested, is worth a passing note: it's the kind of pattern that would also show
-up if some Timing prompts push a comparably-sized model over a context or generation-length limit
-in the paper's own harness — plausible but not confirmed, since we don't have the paper's own error
-logs to check against.
+The more interesting sub-question this task can answer directly is whether *showing the model a
+waveform of the buggy behavior actually helps* — the paper reports "mixed performance" across its
+model set without per-model detail. For Llama, adding the trace (one-shot) is a small net improvement
+in aggregate that hides a genuine split by bug type: arithmetic, assignment, and timing all improve,
+while state-machine gets worse. That echoes the paper's mixed finding at the level of an individual
+model rather than contradicting it — waveform data helps on some bug classes and not others, and not
+reliably enough to call an unambiguous win. (GPT-3.5 can't run one-shot at all: a full waveform trace
+plus prompt overflows its 16K-token context window — a model limitation, not a harness one.)
 
 ### `chipbench_refmodel`
 
-Ran Llama 3.1 8B on the full 90-sample dataset (45 problems × 2 languages, 20 epochs). Full
-technical detail for everything in this section — exact error text, `diff`-verified attribution of
-each bug to the paper's code vs. ours, and the complete failure-mode breakdown — lives in
-README.md's Evaluation Report; this section is the short version.
+**The task.** Given a Verilog module, the model writes a functionally-equivalent reference model in
+Python or C++ (CXXRTL), scored by a Verilator-based cross-language differential test that drives
+identical inputs into both and checks that the outputs agree.
 
-**What we found:** most of the run wasn't measuring model capability at all — it was bottlenecked
-by three bugs in the evaluation harness itself (two in our own adaptation, one in the vendored
-toolbox we reused as-is). Each produced a clean, systematic near-0% that had nothing to do with
-what the model wrote: a CXXRTL prompt teaching a C++ API that no longer matched the pinned Yosys
-version (83% of CXXRTL samples), generated testbenches referencing a clock signal for circuits that
-don't have one, and a reference file depending on a submodule whose source was never staged as an
-actual file (guaranteeing failure for the entire "non-self-contained" category, 100% of both
-languages).
+![Faceted bar chart: refmodel pass@1 by problem category (Python), ours vs. paper, one panel per model](figures/refmodel_categories.png)
 
-**How we fixed them:** corrected the CXXRTL prompt, staged the missing submodule source, and gated
-the testbench's clock reference on whether the circuit is actually sequential — plus one
-experimental change (a worked example demonstrating CXXRTL's easy-to-miss double-underscore
-port-naming rule, which was stated in the prompt but never previously shown in an example).
+This is where the comparison gets genuinely interesting — and where the numbers only became
+trustworthy after the substantial debugging effort described in the next section. Self-contained
+modules track the paper reasonably closely for all three models (Gemini 44.1% vs. the paper's 33.3%,
+Llama and GPT-3.5 in line too). But look at the middle bar of each panel: **the paper reports a flat
+0% on non-self-contained for every one of the fourteen models it evaluated — not just the weak ones,
+but GPT-5 and Claude Opus 4.5 too — while our fixed harness gets Gemini 3 Flash to 49%.** CPU IP tells
+the same story a shade more mildly: the paper records 0–11% for every model, where our harness scores
+several times higher (Gemini 49.4% vs. 11.1%).
 
-**Result:** re-ran the 38 CXXRTL problems the first bug affected (760 sample-epochs) at each stage:
+That a *frontier* model scores a flat zero on an entire category — in a paper where no model of any
+strength, GPT-5 and Claude Opus included, scores above zero there — is the single hardest fact to
+explain as a capability limit. The far more likely reading, given what we found getting this task to
+run at all, is that **the paper's own harness contains a bug that blocked the category before the
+model was ever measured**: we independently found and fixed exactly such a bug in our own port (a
+missing-submodule-staging gap that guarantees a 0% regardless of model quality). This stays a
+specific, falsifiable hypothesis rather than a confirmed finding — the paper never shipped a runnable
+reference-model harness for us to test directly — but a whole column of zeros spanning fourteen models
+from Llama 8B to GPT-5 reframes the paper's "no current model can do this" from a capability claim
+into a probable tooling artifact, exactly the kind of thing an honest re-implementation exists to
+catch. (CXXRTL was also run for the two original models; the paper publishes no CXXRTL baseline to
+compare against.)
 
-| | pass@1 | pass@5 | pass@10 |
-|---|---|---|---|
-| Original (all bugs present) | 0.00% | 0.00% | 0.00% |
-| First bug fixed only | 1.71(1.17)% | 5.05(3.14)% | 6.46(3.78)% |
-| All fixes + prompt experiment | 2.37(1.40)% | 6.75(3.61)% | 8.58(4.26)% |
+## Debugging the evaluation
 
-The raw pass-rate gain in the last step is within noise (smaller than its own stderr). The clearer
-signal: the share of samples reaching a genuine logic comparison — compiling and simulating
-successfully, then passing or failing on correctness rather than on harness plumbing — rose from
-4.7% to 28.3%. That's the real effect of the fixes, even though the pass rate itself moved only
-modestly. One issue only partially improved: models forgetting CXXRTL's double-underscore naming
-convention remains the single largest failure mode (62% → 45% of samples after the prompt
-experiment) — suggesting a genuine model reliability limit rather than a prompt gap.
+The refmodel numbers above look unremarkable until you know what they cost. On the very first runs,
+most of `chipbench_refmodel` wasn't measuring the model at all — it was measuring our own scoring
+harness, which was failing before the model's answer ever got a fair test. Separating those two kinds
+of failure — a **capability failure** (the model wrote wrong code) from a **pipeline failure** (the
+harness couldn't correctly score *any* code) — turned out to be the central technical problem of the
+whole project, and the part most worth carrying to other benchmarks.
 
-**Correction:** the testbench-clock-reference fix turned out to have never actually been tested —
-the vendored toolbox it lives in is baked into a Docker image that was never rebuilt after the fix
-was written, so every run reported in this section ran the pre-fix code the whole time. The other
-two fixes (the CXXRTL prompt, and submodule staging) are unaffected — those run on the host
-process, not inside the image. The image has since been rebuilt, and — since a real model's output
-can't reliably reproduce the exact condition needed to expose this bug — confirmed instead with a
-deterministic test: a hand-written, deliberately-correct combinational CXXRTL submission that
-correctly omits `p_clk` now scores 1.0 against the real toolchain, where it previously would have
-failed regardless of correctness. Full detail is in README.md's Evaluation Report.
+Getting a clean signal out of this task took finding and fixing **seven such harness bugs**, and it
+is worth stating up front whose they are: **five of the seven are defects in the paper's own shipped
+code and data** — a testbench generator that references a clock for combinational circuits, a port
+extractor that mis-parses parametrized bit-widths, a clock-detection helper that only checks a
+module's *first* input, a golden reference Verilator rejects outright, and reference files using
+macros defined only in a separate file — each confirmed with a byte-for-byte `diff` against a mirror
+of the original ChipBench repository before being attributed to anyone. Those fire for anyone who
+runs the paper's own toolbox, not just this port. The remaining two are genuinely ours and flagged
+just as explicitly: a submodule-staging gap in the reference-model dataset we had to *construct* (the
+paper never ships a runnable one), and a prompt/toolchain-version mismatch from pinning a specific
+Yosys build. That accounting is what lets us later suggest the paper's own flat 0% on some categories
+is likely a harness artifact and mean it responsibly — we only call a bug the paper's when a `diff`
+proves it.
 
-**Then we ran the full 45-problem CXXRTL set** (not just the 38 affected by the first bug), and
-confirmed the CXXRTL-prompt and submodule-staging fixes hold at full scale — zero occurrences of
-either original error signature across all 900 sample-epochs (the testbench-clock error signature
-also didn't occur, but per the correction above that's not meaningful evidence either way — the
-harness code generating it was unchanged from before). Two categories still scored a flat 0%, and
-checking per-problem rather than per-category turned up a **fourth infrastructure bug**: 5 of the 45
-problems have a `ref.sv` that references a Verilog macro (e.g. `` `Branch ``, `` `ZeroWord ``) whose
-definition lives only in `test.sv` — the same "split across two files that only get compiled
-together by accident elsewhere in the pipeline" shape as the submodule bug, confirmed via `diff`
-to be a genuine dataset gap, not something we introduced. It guarantees a compile failure before
-the model's answer is even considered, for exactly those 5 problems (4 of 9 CPU IP problems, 1 of 6
-non-self-contained). Restricting to the other 5 CPU IP problems this doesn't touch, the failures
-are genuinely capability-driven (compile/logic/naming errors, not infrastructure) — so CPU IP's
-flat 0% is a mix of "hard for the model" and "never got a fair shot," not purely the former. Not
-yet fixed; full detail and the exact affected problem list is in
-README.md's Evaluation Report.
+### Harness failure trajectory
 
-| Category | n | pass@1 | pass@5 | pass@10 |
-|---|---|---|---|---|
-| Self-contained (CXXRTL) | 30 | 4.17(1.89)% | 13.37(4.94)% | 19.01(6.56)% |
-| Non-self-contained (CXXRTL) | 6 | 0.00% | 0.00% | 0.00% |
-| CPU IP (CXXRTL) | 9 | 0.56(0.56)% | 2.78(2.78)% | 5.56(5.56)% |
+The number we actually drove down isn't a pass rate — it's the share of every sample's failure that
+traces to the harness rather than the model. Every point still in that "pipeline" band is a sample
+that never measured the model at all, so its contribution to the pass rate is meaningless. Watching
+that share fall is how we knew a fix had genuinely worked:
 
-The image was rebuilt and re-run: self-contained's pass rate genuinely improved (4.17% vs. 2.83%
-pass@1 pre-rebuild), confirming the clock-reference fix does something real, not just in an
-isolated unit test. Zero macro-staging errors anywhere in this run either. But non-self-contained
-was *still* a flat 0% in both languages — and finding out why turned up a **fifth infrastructure
-bug**, this time in a place we didn't expect: a vendored port-extraction script with a regex that
-(a) has no idea where one Verilog module ends and another begins, which our own submodule-staging
-fix broke by putting two modules in one file, and (b) can't handle a parametrized port width like
-`[DATA_WIDTH-1:0]` — extremely common Verilog — so it extracts the type keyword itself (`reg`,
-`logic`) as a bogus port name. The second one isn't new or ours: it's in the *original* vendored
-file, and it means an earlier claim in this document was wrong.
+![Line chart: refmodel CXXRTL harness-failure share per problem category across fix milestones, each line declining toward 0%, overall from 93% to near-zero](figures/pipeline_decline.png)
 
-**Correction:** we previously reported Python's `self_contained` and `cpu_ip` as "legitimate,
-unaffected by any bugs." Checking that original run against this newly-found bug, 40 of 600
-`self_contained` and 40 of 180 `cpu_ip` sample-epochs hit it — a real, if partial, contamination we
-didn't catch until building a systematic failure classifier made it possible to check every
-sample's exact error text at once. Those numbers (and the paper comparison built on them) aren't
-fully clean. Full detail, exact figures, and the two other new findings (a second port-extraction
-symptom, and an unrelated Verilator-strictness gap in one problem's original data) are in
-README.md's Evaluation Report.
+On the original CXXRTL runs, **93% of samples were failing on the harness, not the model** — a pass
+rate computed over that is very nearly pure noise. Each line above is one problem category; each
+milestone on the x-axis is a fixed bug or pair of bugs. The overall share (red) drops from 93% to
+~31% once an outdated CXXRTL prompt and a missing submodule are staged correctly, then to ~2% after a
+rewrite of a vendored port-extraction script — by which point self-contained and CPU IP are already
+fully clean. Only non-self-contained (dashed) stays pinned near 100% far longer, because a single CPU
+problem in it was blocked by two further bugs in a row; it finally reaches 0 at the last milestone
+once both are fixed. Every bug on this trajectory affects both target languages, not just CXXRTL —
+the Python runs followed the same shape from a lower starting share (~31%). The finer-grained
+version — every run in order, each pipeline bucket mapped to the exact bug that causes it — lives in
+[`debug_report.html`](debug_report.html); the shape is the whole point, harness failures going from
+dominating the signal to absent.
 
-**Fixed and confirmed against the real toolchain, at full dataset scale, in both languages.** The
-port-extraction script now stops scanning after the first module (fixing the module-boundary
-cause) and resolves parametrized widths by looking up `parameter`/`` `define `` values in the file
-instead of assuming every width is a literal integer (fixing the pre-existing one). Six unit tests
-cover both causes against the real triggering files; two new deterministic e2e tests confirm it
-against the real, rebuilt Docker image. Full 45-problem, 20-epoch re-runs in both CXXRTL and Python
-then confirmed it at scale: `self_contained` and `cpu_ip` both drop to 0% pipeline-attributable
-failure in both languages, and overall pipeline share falls from 93.0%/31.1% (original CXXRTL/Python
-runs) to 2.3%/2.2% — almost entirely the separate, still-open Verilator-strictness gap below, not
-this bug.
+### The failure classifier
 
-**A controlled before/after isolates the fix from the rest of the debugging history.** The
-chronological numbers above mix bug-fixes together (Bugs 1 and 2 landed in the same run, for
-instance), so a dedicated two-point comparison was run instead: our own faults (Bugs 1, 2) held
-fixed in both arms, the paper's faults (Bugs 3, 5, 6) present in "before" and fixed in "after,"
-same 45 problems/20 epochs/model in both languages. Overall pipeline share: CXXRTL 43.1%→2.3%,
-Python 31.1%→2.2%; `self_contained`/`cpu_ip` both hit exactly 0% in both languages. Full breakdown
-in README.md's Evaluation Report's "A controlled before/after" section.
+We couldn't have driven that number down without being able to *measure* it, sample by sample — and
+both ChipBench scorers hand back only free-text tool output (a compiler log, a simulator dump), not
+structured error codes. So the core instrument of this project was a **failure classifier**: a script
+that reads every sample's raw error text across every run (via Inspect's own `samples_df`) and sorts
+it into buckets — pass, capability failure, pipeline failure — with each pipeline bucket tied to the
+specific bug that produces it.
 
-**The fix generalizes to a second model, in both languages.** GPT-3.5 Turbo's refmodel runs
-against the fully-fixed pipeline show the *exact same signature* as Llama 3.1 8B's, in Python
-**and** CXXRTL independently: `self_contained` and `cpu_ip` both at 0% pipeline share in both
-languages, and the only pipeline bucket anywhere is `verilator_rejects_construct` (10/450 in each
-language, all in `not_self_contained`, all on the same `Prob006_cpu_top` problem) — the one issue
-that was never in scope to fix. This wasn't a given: the six bugs were all found and fixed using
-Llama's runs, so it was possible the fixes were somehow tuned to that model's specific failure
-patterns. They aren't — four for four (2 models × 2 languages), same result every time.
+Crucially, it was **bootstrapped iteratively, not designed up front.** Each sample's error text is
+matched against a growing cascade of regex signatures, each one added only after a real failure was
+read by hand and traced to a confirmed root cause. Anything matching nothing falls into an explicit
+"unclassified" bucket — and it was that leftover bucket, not the categories already believed clean,
+that kept surfacing the next bug.
 
-**A sixth bug, and one excluded sample, since the numbers above.** Checking Dataset Validity
-(EVALUATION_CHECKLIST.md's "is it reasonably possible for a model to succeed at each sample?")
-turned up a **sixth infrastructure bug**: Verilator outright rejected `Prob006_cpu_top`'s golden
-reference (`%Error-BLKANDNBLK`, a blocking/non-blocking assignment mix Icarus Verilog tolerates but
-Verilator doesn't), blocking 100% of that one problem's attempts in both languages regardless of
-model output — confirmed to be the paper's own unmodified data, not a dataset-construction issue.
-Fixed by waiving the lint objection (`-Wno-BLKANDNBLK`), which doesn't change Verilator's own
-elaboration semantics; confirmed via a deterministic e2e regression test. Separately, an automated
-Inspect Scout trajectory scan turned up a genuine broken record: `Prob000_Four-to-one_multiplexer`'s
-prompt (reused verbatim from `verilog_gen`) tells the model to write Verilog code while the refmodel
-system prompt prepended to it says the opposite — a self-contradictory instruction, confirmed to be
-the paper's own unmodified data. Per `CONTRIBUTING.md`'s Data Quality guidance, it's now excluded
-from `chipbench_refmodel` (44 problems, matching the paper's own count exactly, rather than the
-incidental 45 used in every number above). Full detail on both in README.md's Evaluation Report.
+![Schematic of the failure-classifier bootstrapping loop: raw eval logs feed into reading every sample's error text, matched against known regex signatures into pass/capability-failure/pipeline-failure buckets or an unclassified bucket, which is manually inspected to confirm a new root cause, fixed with a regression test, and added back as a new signature, closing the loop](figures/classifier_schematic.png)
 
-**Python refmodel vs. the paper's Table 3, now with a clean harness on both sides and the
-`Prob000` exclusion applied** (recomputed from the existing per-sample scores — no re-run was
-needed, since each sample was already scored independently):
+The loop in the diagram above is meant to run *again every time a fix lands*, and this project is the
+argument for why. Four separate times, fixing one bug didn't shrink the failure count the way it
+should have — it just exposed a second bug that had been sitting underneath the first, invisible
+because a compiler only reports its first error per file. The most recent instance was live: fixing a
+Verilator-strictness bug on one CPU problem made it finally compile, which immediately revealed a
+*second* harness bug on the same problem (a clock-detection helper that only ever checked a module's
+first input) — caught only because the "manually inspect the leftovers" step was actually re-run
+rather than the category being marked done once its known error signature disappeared. The exact
+masking relationships and before/after counts are tabulated in
+[`debug_report.html`](debug_report.html); the transferable lesson is a single sentence: **a failure
+bucket dropping to zero is the trigger to re-inspect what's left, not the signal to stop looking.**
 
-| Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
-|---|---|---|---|
-| Llama 3.1 8B | 12.2(3.82)% / 2.22% | 23.1(5.74)% / 5.56% | 27.7(6.36)% / 6.67% |
-| GPT-3.5 Turbo | 18.2(5.24)% / 5.56% | 24.4(6.47)% / 6.67% | 25.0(6.60)% / 7.78% |
-
-| Category | Llama ours | Llama paper | GPT-3.5 ours | GPT-3.5 paper |
-|---|---|---|---|---|
-| Self-contained (n=29, `Prob000` excluded) | 12.4(5.31)% / 19.8(6.71)% / 23.9(7.50)% | 6.67% / 16.67% / 20% | 16.2(6.27)% / 20.7(7.65)% / 20.7(7.66)% | 16.67% / 20% / 23.33% |
-| Non-self-contained | 2.50(1.71)% / 11.6(7.78)% / 21.1(13.7)% | 0% / 0% / 0% | 3.33(3.33)% / 13.0(13.0)% / 16.7(16.7)% | 0% / 0% / 0% |
-| CPU IP | 17.8(7.22)% / 41.7(16.5)% / 44.4(17.5)% | 0% / 0% / 0% | 34.4(14.8)% / 44.2(17.5)% / 44.4(17.6)% | 0% / 0% / 0% |
-
-Non-self-contained's numbers above still **predate the sixth (Verilator) bug fix** — unlike the
-`Prob000` exclusion, that fix can't be recovered by filtering the existing logs, since Verilator
-was erroring out on `Prob006_cpu_top` before ever reaching a pass/fail comparison (the harness
-failure, not the model's answer, produced those 0s). A fresh run would be expected to show this
-row improve further, since that was the sole remaining source of pipeline (not capability) failure
-in this category.
-
-Self-contained tracks the paper reasonably closely for both models (same order of magnitude, same
-direction of improvement across pass@1→10). Non-self-contained and CPU IP are where this
-comparison gets genuinely interesting rather than noisy: **the paper reports a flat 0% on both
-categories for *both* models** (and, per the standing open question in
-README.md's Evaluation Report, apparently for every model it tested, not just these two)
-— while our fixed harness scores meaningfully above 0% on both, for both models. Given we
-independently found and fixed a missing-submodule-staging bug (Bug 2) that would have caused
-exactly this symptom — 100% blocked non-self-contained regardless of model or model quality — in
-*our own* port, and the paper never shipped a runnable refmodel dataset for us to test their
-original tooling against directly, the most likely explanation is that the paper's own evaluation
-harness has the same class of bug, unfixed, for both categories. This is circumstantial, not
-confirmed (we can't run their exact original code), but it's a specific, falsifiable claim rather
-than a shrug — and it reframes CPU IP's and non-self-contained's "low paper numbers" from "these
-categories are just hard" to "these categories were likely never correctly measured in the
-original paper at all."
-
-## Status
-
-- ✅ `chipbench_verilog_gen`: implemented, tested, baseline-reproduced against three models
-  (Llama 3.1 8B, DeepSeek R1, GPT-3.5 Turbo). The GPT-3.5 Docker blocker is resolved — root cause
-  was 6 days of orphaned containers/images from Inspect's own sandbox-cleanup silently failing,
-  not a transient network issue.
-- ✅ `chipbench_debug`: baseline-reproduced against two models. Llama 3.1 8B on the full dataset,
-  both zero-shot and one-shot halves (178 of 178 problems); GPT-3.5 Turbo on the zero-shot half
-  only (89 of 89) — one-shot is out of scope for this model specifically (16,385-token context
-  window can't always fit prompt + VCD trace, a model limitation, not a harness bug).
-- ✅ `chipbench_refmodel`: baseline runs against Llama 3.1 8B exposed **six** infrastructure bugs
-  total (see README.md's Evaluation Report for all). All six are now fixed at the code level and
-  regression-tested; the first five are additionally confirmed clean at full dataset scale across
-  **all four** model×language combinations tested (Llama/GPT-3.5 × Python/CXXRTL):
-  `self_contained`/`cpu_ip` at 0% pipeline share every time. The sixth (a Verilator strictness gap
-  on one problem) is fixed and confirmed via a deterministic regression test, but not yet
-  reconfirmed at full dataset scale — see the correction note above. The fixes generalize; they
-  weren't tuned to Llama's specific failure patterns. One genuinely broken dataset record
-  (`Prob000_Four-to-one_multiplexer`'s self-contradictory refmodel prompt) is now excluded from
-  `chipbench_refmodel` per `CONTRIBUTING.md`'s Data Quality guidance.
-- ✅ Work committed and pushed; `ToImplement/` (the full vendored mirror used for
-  diff-verification during development) removed from tracking — it served its purpose and doesn't
-  belong in the submission itself.
-- ⏭️ Next: submit to the [Inspect Evals
-  Register](https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/EVAL_REGISTER.md) (one
-  issue per task, per the Register's current one-task-per-submission model); a fresh full-scale
-  `chipbench_refmodel` run would reconfirm the sixth bug's fix and the `Prob000` exclusion at
-  scale rather than via recomputation/regression test; the recurring CPU IP over-performance
-  pattern (confirmed across all three `verilog_gen` models) and the non-self-contained/CPU IP
-  paper-Table-3 discrepancy remain open, specific, falsifiable hypotheses worth a dedicated
-  follow-up rather than further note-taking here.
+How far this approach travels depends on one property of the scorer: it has to expose verbose,
+greppable failure text, and its failures have to cluster into a small number of recurring causes.
+That holds for anything scored by a compiler or a simulator. It holds much less well for an
+LLM-judged or rubric-scored eval, where a "failure" is a judgment call with no crisp error string to
+match on — there, the classification step would itself have to become model-based, quietly
+reintroducing the very "who validates the validator" problem this whole exercise was built to escape.
 
 ## Conclusion
 
-This implementation now has baseline coverage across all three ChipBench tasks, with at least two
-models on every task and three on `verilog_gen`. All six infrastructure bugs found during this
-project are now fixed at the code level and regression-tested; five of the six are confirmed clean
-at full dataset scale in both refmodel languages, and — the strongest validity signal in this
-document — confirmed clean on a *second* model as well, not just the one used to find and fix
-them. The sixth (the Verilator strictness gap) is fixed and confirmed via a deterministic e2e
-test against the real rebuilt toolchain, but hasn't yet been reconfirmed at full dataset scale the
-way the other five have. One genuinely broken dataset record — a self-contradictory refmodel
-prompt on `Prob000_Four-to-one_multiplexer`, the paper's own unmodified data — is now excluded
-from `chipbench_refmodel` rather than silently contaminating its results. No known infrastructure
-issue remains open anywhere in the implementation; what remains is reconfirmation at scale, not a
-fix.
+This project ported all three ChipBench tasks — Verilog generation, debugging, and cross-language
+reference-model generation — into Inspect AI, validated that the scoring harness can't be fooled by
+a plausible-looking wrong answer, and reproduced several of the original paper's broad performance
+patterns across three models (Llama 3.1 8B, GPT-3.5 Turbo, DeepSeek R1) — close agreement on some
+categories, substantial and honestly-reported discrepancies on others, not a uniform match. Along
+the way we found and fixed **seven bugs in the evaluation harness itself**, each of which had been
+silently producing clean-looking, near-0% scores that had nothing to do with model capability;
+fixing them dropped the harness's own pipeline-failure share from 43–93% down to ~2% on the
+affected categories and measurably raised pass rates for every model re-tested against the fixed
+pipeline. The seventh turned up while reconfirming the sixth fix (see the `chipbench_refmodel`
+results above) — a live demonstration of this document's own thesis, confirmed present in the
+paper's own unmodified code and fixed the same day. One genuinely broken dataset record (a
+self-contradictory `chipbench_refmodel`
+prompt) was also identified and excluded. The implementation is tested, reproduced against
+two-to-three models per task, and submitted to the [Inspect Evals
+Register](https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/EVAL_REGISTER.md).
 
-Reproduction against the paper is close on several specific findings across two to three models
-each (exact 0% matches on hierarchical/non-self-contained designs in both `verilog_gen` and
-`refmodel`, close self-contained numbers in both tasks) and honestly divergent on others. Two
-divergent patterns recur consistently enough across models to look structural rather than noisy:
-**CPU IP scores higher in our `verilog_gen` runs than the paper's, for all three models tested**,
-and **CPU IP plus non-self-contained both score meaningfully above the paper's flat 0% in
-`refmodel`, for both models tested there.** The second pattern now has a specific, falsifiable
-explanation on file: we independently found and fixed a bug in our own port that would produce
-exactly this symptom (a missing-submodule-staging gap blocking non-self-contained entirely,
-regardless of model), and the paper's own tooling was never available to test directly — so the
-most likely account is that the paper's original harness has the same unfixed bug, not that these
-categories are simply hard for every model tested. That reframing — "a benchmark's own harness bug
-silently deflating its published numbers for specific categories" — is arguably the more important
-finding here than any single reproduction number.
+The next step is to test whether the same failure-classification workflow improves other
+tool-grounded evaluations, beginning with physical-design benchmarks — ChipBench's RTL-level focus
+(specification → Verilog → reference model) is only the first stage of the hardware design
+pipeline, and further stages (place-and-route, physical verification) lean on EDA tool loops with
+their own harness-failure surface to get wrong. The broader goal is not merely to make benchmarks
+run, but to establish that their failures genuinely measure the model rather than the surrounding
+infrastructure.
 
-The finding most worth surfacing to the wider eval community isn't a number — it's that **adapting
-an existing benchmark's evaluation harness can silently import the harness's own bugs alongside its
-scoring logic.** Four concrete, confirmed cases turned up here: a prompt template teaching a
-C++ API that had drifted out of sync with the pinned toolchain version, generated testbenches
-referencing hardware signals that shouldn't exist for the circuit being tested, and — found twice,
-via the same mechanism in two different places — a reference file depending on content (a
-submodule definition, then separately a macro definition) that was only ever written into a
-*different* file the scorer never compiles. All four produced clean-looking, systematic 0% (or
-near-0%) results that had nothing to do with model capability — the kind of result that's easy to
-report at face value if you don't go looking for why a category is exactly zero. Two of the four
-traced to the original vendored data itself (not our adaptation of it), confirmed via direct `diff`
-against the unmodified upstream source rather than assumption — and notably, both of those two are
-the same underlying failure mode recurring in a second place, discovered only because we kept
-checking per-problem results after fixing the first instance rather than trusting the aggregate.
+**Related benchmarks:** [PDAgent-Bench](https://arxiv.org/html/2606.17253v1) (LLM/VLM agents
+against real EDA tool loops for physical design) and [HardSecBench](https://arxiv.org/pdf/2601.13864)
+(hardware security awareness, a natural pairing with `chipbench_debug`'s bug-fixing task).
 
-One specific thread worth flagging back upstream: the paper reports a flat 0%/0%/0% for
-non-self-contained `refmodel` problems across every model with no exceptions — a pattern
-consistent with exactly the missing-submodule-staging bug found here. This is not confirmed (it
-would require tracing the paper's own, non-public evaluation harness), but it's a concrete,
-checkable hypothesis: the paper's headline claim that no current model can handle this problem
-category may be, in part, a tooling artifact rather than a fully demonstrated capability ceiling.
+## Appendix: full result tables
 
-A second, related lesson surfaced late: a fix that's code-complete isn't the same as a fix that's
-been exercised. The testbench-clock fix sat in the source tree for a day and a half producing
-seemingly-consistent "confirmed" results across two separate re-runs, purely because the Docker
-image it needed to be baked into was never rebuilt — every one of those runs was silently testing
-the old code. It was only caught by building a systematic, reusable failure classifier (loading
-score explanations across many logs via Inspect's own `samples_df`, rather than re-deriving ad hoc
-regexes per run) and noticing that two runs which should have differed in one specific error
-signature, given what was supposedly fixed between them, didn't move the way that fix would
-predict. For anything baked into a container image rather than read fresh by the host process,
-"I edited the file" and "the running eval used the edit" are separate claims — the second one
-needs to be checked directly, not assumed from the first.
+The exact numbers behind the charts in the Results section. Our figures are **mean(stderr)** to 3
+significant figures; the paper reports point estimates with no error bars (shown after the `/`).
+Gemini 3 Flash is in the paper (Tables 2–4); all our Gemini runs are 20 epochs. One caveat on the
+overall tables: the paper's overall is a **macro-average across categories** (the unweighted mean of
+the three per-category rates), whereas our overall is problem-weighted — so the per-category rows are
+the cleanest like-for-like comparison.
 
-A third lesson, arguably the most humbling: fixing the bugs that were blocking a category is not
-the same as validating that category. After the first four fixes, `self_contained` looked clean —
-it wasn't touched by any of them, and its pass rate had visibly improved. Only building a
-systematic failure classifier and checking *every* sample's exact error text (rather than trusting
-that "no known bug applies here" means "no bug applies here") turned up a fifth bug already present
-in categories we'd called legitimate two write-ups ago. The lesson isn't "check harder" in the
-abstract — it's that a category with zero known contamination and a category with zero *actual*
-contamination are different claims, and only systematic, mechanical checking (not memory of which
-fixes touched what) can tell them apart.
+### `chipbench_verilog_gen`
 
-Practically, for anyone else adapting ChipBench: the corrected CXXRTL prompt
-(`gen_cxxrtl_prompt_fixed.txt`), the vendored-file fixes documented in `NOTICE`, and the failure
-classifier in `agent_artefacts/chipbench/failure_analysis/` are directly reusable, and the
-bug-attribution method used throughout this project — verifying every "is this the paper's bug or
-ours" question via `diff` against the original vendored source rather than memory or assumption —
-is the same discipline worth applying to whatever's fixed next.
+| Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
+|---|---|---|---|
+| Llama 3.1 8B | 4.44(1.94)% / 7.0% | 11.3(4.15)% / 8.2% | 14.3(4.86)% / 9.3% |
+| DeepSeek R1 (10 epochs) | 27.1(5.63)% / 23.7% | 40.6(7.20)% / 33.7% | 42.2(7.45)% / 38.2% |
+| GPT-3.5 Turbo (10 epochs) | 18.4(5.18)% / 8.15% | 24.2(6.42)% / 12.59% | 24.4(6.48)% / 12.59% |
+| Gemini 3 Flash | 38.9(6.75)% / 30.74% | 45.4(7.36)% / 39.63% | 46.7(7.35)% / 39.63% |
+
+By problem category:
+
+| Category | Model | pass@1 (ours/paper) | pass@5 (ours/paper) | pass@10 (ours/paper) |
+|---|---|---|---|---|
+| Self-contained | Llama 3.1 8B | 4.50(2.32)% / 10% | 11.9(5.30)% / 13.3% | 14.8(6.30)% / 20% |
+| Self-contained | DeepSeek R1 | 28.0(7.05)% / 26.7% | 41.8(8.91)% / 40% | 43.3(9.20)% / 53.3% |
+| Self-contained | GPT-3.5 Turbo | 19.0(6.31)% / 13.3% | 26.3(8.11)% / 26.7% | 26.7(8.21)% / 26.7% |
+| Self-contained | Gemini 3 Flash | 37.2(8.14)% / 36.67% | 44.9(8.97)% / 46.67% | 46.7(8.95)% / 46.67% |
+| Non-self-contained | Llama 3.1 8B | 0.00(0.00)% / 0% | 0.00(0.00)% / 0% | 0.00(0.00)% / 0% |
+| Non-self-contained | DeepSeek R1 | 18.3(9.10)% / 33.3% | 45.8(20.7)% / 50% | 50.0(22.4)% / 50% |
+| Non-self-contained | GPT-3.5 Turbo | 0.00(0.00)% / 0% | 0.00(0.00)% / 0% | 0.00(0.00)% / 0% |
+| Non-self-contained | Gemini 3 Flash | 31.7(20.1)% / 33.33% | 33.3(21.1)% / 50% | 33.3(21.1)% / 50% |
+| CPU IP | Llama 3.1 8B | 7.22(6.02)% / 22.2% | 16.6(10.9)% / 22.2% | 22.2(12.1)% / 22.2% |
+| CPU IP | DeepSeek R1 | 30.0(15.1)% / 11.1% | 33.3(16.7)% / 11.1% | 33.3(16.7)% / 11.1% |
+| CPU IP | GPT-3.5 Turbo | 28.9(14.7)% / 11.1% | 33.3(16.7)% / 11.1% | 33.3(16.7)% / 11.1% |
+| CPU IP | Gemini 3 Flash | 49.4(16.3)% / 22.22% | 55.5(17.5)% / 22.22% | 55.6(17.6)% / 22.22% |
+
+### `chipbench_debug`
+
+Zero-shot; paper figures are Table 4's Average, treated as a zero-shot proxy (the paper doesn't
+state which shot mode Table 4 reports).
+
+| Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
+|---|---|---|---|
+| Llama 3.1 8B (zero-shot) | 7.36(1.58)% / 7.77% | 21.1(3.37)% / 14.7% | 29.6(4.12)% / 22.9% |
+| GPT-3.5 Turbo (zero-shot) | 21.1(3.51)% / 10.0% | 34.2(4.84)% / 21.25% | 37.1(5.15)% / 26.25% |
+| Gemini 3 Flash (zero-shot) | 40.8(4.79)% / 29.61% | 49.0(5.07)% / 51.80% | 51.9(5.09)% / 52.84% |
+
+By injected bug type (zero-shot):
+
+| Bug type | Model | pass@1 (ours/paper) | pass@5 (ours/paper) | pass@10 (ours/paper) |
+|---|---|---|---|---|
+| Arithmetic | Llama 3.1 8B | 5.21(2.10)% / 4.17% | 17.9(5.78)% / 8.33% | 26.9(7.27)% / 20.8% |
+| Arithmetic | GPT-3.5 Turbo | 29.6(7.81)% / 16.67% | 44.1(10.0)% / 25% | 45.8(10.4)% / 25% |
+| Arithmetic | Gemini 3 Flash | 51.3(9.85)% / 37.50% | 55.2(10.2)% / 62.50% | 56.2(10.1)% / 66.67% |
+| Assignment | Llama 3.1 8B | 10.5(3.12)% / 3.33% | 29.0(6.69)% / 23.3% | 38.6(7.77)% / 36.7% |
+| Assignment | GPT-3.5 Turbo | 32.3(6.76)% / 6.67% | 49.1(9.14)% / 26.67% | 50.0(9.28)% / 46.67% |
+| Assignment | Gemini 3 Flash | 40.7(8.48)% / 36.67% | 48.1(8.75)% / 53.33% | 51.6(8.79)% / 53.33% |
+| State machine | Llama 3.1 8B | 14.2(13.2)% / 16.7% | 20.8(16.4)% / 16.7% | 25.0(17.1)% / 16.7% |
+| State machine | GPT-3.5 Turbo | 15.0(15.0)% / 16.67% | 16.7(16.7)% / 33.33% | 16.7(16.7)% / 33.33% |
+| State machine | Gemini 3 Flash | 26.7(16.1)% / 16.67% | 37.5(20.2)% / 50% | 41.7(20.1)% / 50% |
+| Timing | Llama 3.1 8B | 4.48(1.78)% / 6.90% | 15.6(5.03)% / 10.3% | 23.4(6.89)% / 17.2% |
+| Timing | GPT-3.5 Turbo | 3.79(1.60)% / 0% | 14.2(5.50)% / 0% | 20.7(7.66)% / 0% |
+| Timing | Gemini 3 Flash | 35.3(7.95)% / 27.59% | 47.1(8.85)% / 41.38% | 50.9(8.99)% / 41.38% |
+
+Llama 3.1 8B was also run one-shot (same 89 problems plus a VCD waveform trace); aggregate pass@1
+7.36% → 7.98%, with the per-bug-type split discussed in Results.
+
+### `chipbench_refmodel`
+
+Python; the paper reports Table 3 for Python only (no CXXRTL/SystemC baseline exists).
+
+| Model | pass@1 (ours / paper) | pass@5 (ours / paper) | pass@10 (ours / paper) |
+|---|---|---|---|
+| Llama 3.1 8B (Python) | 12.2(3.82)% / 2.22% | 23.1(5.74)% / 5.56% | 27.7(6.36)% / 6.67% |
+| GPT-3.5 Turbo (Python) | 18.2(5.24)% / 5.56% | 24.4(6.47)% / 6.67% | 25.0(6.60)% / 7.78% |
+| Gemini 3 Flash (Python) | 45.9(6.87)% / 14.81% | 54.9(7.40)% / 20.37% | 56.3(7.50)% / 20.37% |
+
+By problem category (Python; Llama/GPT-3.5 `Non-self-contained` from the post-fix targeted rerun of
+those 6 problems — see the Debug section; Gemini's full run postdates the fixes):
+
+| Category | Model | pass@1 (ours/paper) | pass@5 (ours/paper) | pass@10 (ours/paper) |
+|---|---|---|---|---|
+| Self-contained | Llama 3.1 8B | 12.4(5.31)% / 6.67% | 19.8(6.71)% / 16.67% | 23.9(7.50)% / 20% |
+| Self-contained | GPT-3.5 Turbo | 16.2(6.27)% / 16.67% | 20.7(7.65)% / 20% | 20.7(7.66)% / 23.33% |
+| Self-contained | Gemini 3 Flash | 44.1(8.73)% / 33.33% | 51.0(9.32)% / 50% | 51.7(9.44)% / 50% |
+| Non-self-contained | Llama 3.1 8B | 0.83(0.83)% / 0% | 4.17(4.17)% / 0% | 8.33(8.33)% / 0% |
+| Non-self-contained | GPT-3.5 Turbo | 11.67(8.33)% / 0% | 29.56(18.91)% / 0% | 33.33(21.08)% / 0% |
+| Non-self-contained | Gemini 3 Flash | 49.2(20.7)% / 0% | 57.5(20.2)% / 0% | 62.7(20.2)% / 0% |
+| CPU IP | Llama 3.1 8B | 17.8(7.22)% / 0% | 41.7(16.5)% / 0% | 44.4(17.5)% / 0% |
+| CPU IP | GPT-3.5 Turbo | 34.4(14.8)% / 0% | 44.2(17.5)% / 0% | 44.4(17.6)% / 0% |
+| CPU IP | Gemini 3 Flash | 49.4(14.1)% / 11.11% | 65.7(16.4)% / 11.11% | 66.6(16.7)% / 11.11% |
+
+CXXRTL was also run for both original models (Llama 4.5(2.07)/11.0(4.11)/14.3(4.85)%, GPT-3.5
+6.8(2.87)/14.2(4.83)/18.2(5.88)% for pass@1/5/10); the paper publishes no CXXRTL baseline to compare
+against.

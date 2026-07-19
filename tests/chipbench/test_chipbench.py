@@ -352,3 +352,34 @@ def test_refmodel_blkandnblk_waiver_e2e() -> None:
     assert "BLKANDNBLK" not in explanation
     assert "Unsupported" not in explanation
     assert "RefModule compiled successfully" in explanation
+
+
+@pytest.mark.docker
+@pytest.mark.slow(60)
+def test_refmodel_clk_detection_e2e() -> None:
+    """Regression test for the seventh bug: is_clk_signal only checked the first input.
+
+    Prob006_cpu_top lists `clk` as its third input (after `inputReady`,
+    `reset_n`), so `tools/clk.py`'s `is_clk_signal()` used to return early on
+    `inputReady` and incorrectly conclude the module wasn't sequential --
+    the generated testbench then referenced a `clk` local variable that its
+    own (incorrectly-gated) declaration never created, a guaranteed build
+    failure regardless of model output (see README.md's Evaluation Report).
+    This only became visible once the sixth bug (Verilator BLKANDNBLK) was
+    fixed and RefModule started compiling far enough to reach this stage.
+    """
+    [log] = eval(
+        tasks=chipbench_refmodel(language="python"),
+        model=_mock_model(
+            "```python\nclass TopModule:\n    def eval(self, inputs):\n        return {}\n```"
+        ),
+        epochs=Epochs(1, ["pass_at_1"]),
+        sample_id="Prob006_cpu_top/python",
+    )
+    assert log.status == "success"
+    assert log.samples is not None
+    scores = log.samples[0].scores
+    assert scores is not None
+    explanation = scores["crosslang_verify_scorer"].explanation or ""
+    assert "was not declared in this scope" not in explanation
+    assert "Build successful" in explanation

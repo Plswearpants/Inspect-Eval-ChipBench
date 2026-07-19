@@ -579,7 +579,7 @@
       <div class="card good">
         <span class="label">refmodel &middot; CXXRTL &amp; Python, all 45 problems</span>
         <span class="trend"><span class="from">93.0%</span><span class="arrow">&rarr;</span><span class="to">2.3% / 2.2%</span></span>
-        <span class="note">share of samples failing on our harness, not the model &mdash; original run to today; both languages now confirmed independently, same pattern</span>
+        <span class="note">share of samples failing on our harness, not the model &mdash; original run to a full-scale reconfirm predating Bugs 6/7; the non-self-contained slice below has since dropped further, to 0%</span>
       </div>
       <div class="card good">
         <span class="label">&rlarr; self&#8209;contained category only</span>
@@ -588,13 +588,13 @@
       </div>
       <div class="card good">
         <span class="label">&rlarr; non&#8209;self&#8209;contained category only</span>
-        <span class="trend"><span class="from">100%</span><span class="arrow">&rarr;</span><span class="to">17.5%</span></span>
-        <span class="note">finally moving &mdash; Bug 6 fixed; remainder is the still-open Verilator-strictness gap</span>
+        <span class="trend"><span class="from">100%</span><span class="arrow">&rarr;</span><span class="to">0.0%</span></span>
+        <span class="note">Bug 6 (Verilator) fixed, which immediately exposed Bug 7 (clk detection) on the same problem &mdash; both now fixed and reconfirmed with a fresh targeted rerun of all 6 problems, 4 model&times;language combos, zero infra-classified failures in any of them</span>
       </div>
       <div class="card">
         <span class="label">bugs found / confirmed fixed</span>
-        <span class="trend"><span class="to" style="color:var(--ink)">6 / 5</span></span>
-        <span class="note">Bugs 1, 2, 3, 5, 6 fixed &amp; confirmed; one Verilator-strictness gap still open</span>
+        <span class="trend"><span class="to" style="color:var(--ink)">7 / 7</span></span>
+        <span class="note">Bugs 1, 2, 3, 5, 6, 7 fixed &amp; confirmed (Bug 4 is a model-reliability finding, not a bug &mdash; see ledger)</span>
       </div>
     </div>
   </section>
@@ -691,6 +691,13 @@
     above (<code>refmodel_cxxrtl_postbug6_45</code> / <code>refmodel_python_postbug6_45</code>).
     The point: this isolates what the paper's own bugs cost, on top of a harness that's already
     doing its own part correctly — not conflated with our own porting mistakes.</p>
+    <p><strong>Update:</strong> the <code>not_self_contained</code> "after" figures below (17.5%
+    pipeline share, both languages) predate Bug 7 (<code>is_clk_signal</code> only checking a
+    module's first input), found immediately afterward on the exact same problem
+    (<code>Prob006_cpu_top</code>) once Bug 6's fix let compilation reach that stage. With Bug 7
+    also fixed and reconfirmed via a fresh targeted rerun, this category's pipeline share is now
+    0.0% in every one of 4 model&times;language combinations tested — see the headline and bug
+    ledger above.</p>
 
     <h3 style="margin-top:1.75rem">CXXRTL</h3>
     <div class="ba-row head">
@@ -774,7 +781,7 @@
 
   <section id="masking">
     <h2>Why some bug counts go <em>up</em> when you fix something else</h2>
-    <p>Three times in this project, fixing one bug didn't reduce the total failure count &mdash;
+    <p>Four times in this project, fixing one bug didn't reduce the total failure count &mdash;
     it revealed a second bug that had been hiding underneath the first the entire time, because
     the compiler only reports the first error it hits per sample. Reading a bucket's count rising
     without this context looks like a regression; it isn't.</p>
@@ -785,6 +792,7 @@
           <tr><td>Bug 1 &mdash; CXXRTL API mismatch</td><td>CXXRTL name-mangling misses (capability) &amp; Bug 3</td><td class="num">3 &rarr; 319 mangling</td></tr>
           <tr><td>Bug 2 + Bug 5 &mdash; submodule / macro staging</td><td>Bug 6 &mdash; port-extraction regex bug</td><td class="num">140 &rarr; 237 (redecl. + bad-binding)</td></tr>
           <tr><td>Bug 5 &mdash; missing macro staging</td><td>Verilator rejects a construct in <code>Prob006_cpu_top</code></td><td class="num">0 &rarr; 20</td></tr>
+          <tr><td>Verilator <code>BLKANDNBLK</code> waiver</td><td><code>is_clk_signal</code> first-input-only bug, same problem (<code>Prob006_cpu_top</code>)</td><td class="num">100%&rarr;100% blocked on <code>Prob006</code> (n=6 problems, different error signature each time)</td></tr>
         </tbody>
       </table>
     </div>
@@ -848,9 +856,15 @@
           </tr>
           <tr>
             <td>&mdash;</td>
-            <td>Verilator rejects a blocking/non-blocking assignment pattern Icarus Verilog accepts</td>
+            <td>Verilator rejects a blocking/non-blocking assignment pattern Icarus Verilog accepts (<code>%Error-BLKANDNBLK</code>)</td>
             <td><span class="attrib papers">Paper&#8217;s</span><span class="verified-note">&#10003; <code>diff</code> vs. <code>Prob006_cpu_top_ref.sv</code> &rarr; exit 0, byte-identical, including the exact line Verilator objects to</span></td>
-            <td class="status-open">Found, not investigated further</td>
+            <td class="status-fixed">Fixed &amp; confirmed &mdash; waived via <code>-Wno-BLKANDNBLK</code>; reconfirmed with a fresh targeted rerun of all 6 <code>not_self_contained</code> problems (100%&rarr;0% infra on <code>Prob006</code>)</td>
+          </tr>
+          <tr>
+            <td>&mdash;</td>
+            <td><code>tools/clk.py</code>'s <code>is_clk_signal</code> only checks a module's first input, not all of them</td>
+            <td><span class="attrib papers">Paper&#8217;s</span><span class="verified-note">&#10003; <code>diff</code> vs. <code>tools/clk.py</code> &rarr; exit 0, byte-identical &mdash; the function <code>return</code>s unconditionally on the first loop iteration</span></td>
+            <td class="status-fixed">Fixed &amp; confirmed &mdash; found only once the <code>BLKANDNBLK</code> fix above let compilation reach this stage; <code>Prob006_cpu_top</code> lists <code>clk</code> third (after <code>inputReady</code>, <code>reset_n</code>), so it was misclassified as combinational and the generated testbench referenced a <code>clk</code> variable its own declaration never created. Checking every input instead of returning early resolves it; confirmed via a deterministic e2e test (<code>test_refmodel_clk_detection_e2e</code>) and the same targeted rerun above</td>
           </tr>
         </tbody>
       </table>

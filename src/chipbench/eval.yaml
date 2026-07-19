@@ -13,7 +13,7 @@ description: |
 arxiv: https://arxiv.org/abs/2601.21448
 group: Coding
 contributors: ["Plswearpants"]
-version: "4-B"
+version: "5-B"
 tasks:
   - name: chipbench_verilog_gen
     dataset_samples: 45
