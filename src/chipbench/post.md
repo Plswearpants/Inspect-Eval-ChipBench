@@ -69,15 +69,12 @@ problem, matching the paper's claim that smaller models can't yet assemble multi
 two strong models are the informative contrast: DeepSeek&nbsp;R1 (18.3% pass@1, 50% pass@10) and
 Gemini&nbsp;3&nbsp;Flash (31.7% pass@1) both *can* do them, and both land close to the paper's own
 figures for those exact models — DeepSeek's pass@10 matches at 50%, and Gemini's 31.7% sits right on
-the paper's 33.3%. So the 0% is a capability floor for weak models, not an artifact of the task; and
-where a model clears that floor, our numbers track the paper's.
+the paper's 33.3%. So the 0% is a capability floor for weak models, not an artifact of the task.
 
-The one consistent *divergence* is CPU IP components, and it's worth stating precisely rather than as
-a blanket claim. Three of the four models — DeepSeek, GPT-3.5, and Gemini — score roughly 2–3× the
+The one consistent *divergence* worth stating is the CPU IP components. Three of the four models — DeepSeek, GPT-3.5, and Gemini — score roughly 2–3× the
 paper there (Gemini 49.4% vs. 22.2%), while Llama alone scores *lower* than the paper at pass@1 (7.2%
-vs. 22.2%) before converging to its exact figure by pass@10. So it isn't "we score everyone higher";
-it's a category-specific gap that now recurs across three unrelated models spanning mid-tier to
-frontier, which makes it look structural — worth a targeted look — rather than sampling noise.
+vs. 22.2%) before converging to its exact figure by pass@10. This category-specific gap recurs across three unrelated models spanning mid-tier to
+frontier, and looks structural, which might worth a targeted look.
 
 ### `chipbench_debug`
 
@@ -87,9 +84,8 @@ scored the same way via Icarus Verilog simulation against the golden reference.
 
 ![Faceted bar chart: debug pass@1 by injected bug type (zero-shot), ours vs. paper, one panel per model](figures/debug_bugtypes.png)
 
-Here the reproduction is looser, and honestly so: the paper's Table&nbsp;4 doesn't state whether it
-reports zero-shot, one-shot, or a blend, so we treat it as a zero-shot proxy rather than a confirmed
-match. The ordering by capability is clean — Gemini&nbsp;3&nbsp;Flash is the strongest debugger (40.8%
+Here the reproduction is looser: the paper's Table&nbsp;4 doesn't state whether it
+reports zero-shot, one-shot, or a blend, so we treat it as a zero-shot proxy. The ordering by capability is clean — Gemini&nbsp;3&nbsp;Flash is the strongest debugger (40.8%
 pass@1, above the paper on every bug type), GPT-3.5 sits in the middle (21.1% vs. the paper's 10.0%),
 and Llama is weakest, landing almost exactly on the paper at pass@1 (7.36% vs. 7.77%). The gap between
 our numbers and the paper's is mostly a pass@1 effect, though: by pass@5/pass@10 Gemini's paper
@@ -97,14 +93,13 @@ figures (51.8% / 52.8%) essentially match ours (49.0% / 51.9%). No single bug ty
 tightly as verilog_gen's hierarchical category did — the closest is state-machine, which is also the
 smallest and noisiest bucket (only 6 problems, hence the wide error bars).
 
-The more interesting sub-question this task can answer directly is whether *showing the model a
+%The more interesting sub-question this task can answer directly is whether *showing the model a
 waveform of the buggy behavior actually helps* — the paper reports "mixed performance" across its
 model set without per-model detail. For Llama, adding the trace (one-shot) is a small net improvement
 in aggregate that hides a genuine split by bug type: arithmetic, assignment, and timing all improve,
 while state-machine gets worse. That echoes the paper's mixed finding at the level of an individual
-model rather than contradicting it — waveform data helps on some bug classes and not others, and not
-reliably enough to call an unambiguous win. (GPT-3.5 can't run one-shot at all: a full waveform trace
-plus prompt overflows its 16K-token context window — a model limitation, not a harness one.)
+model — waveform data helps on some bug classes and not others, and not
+reliably enough to call an unambiguous win.
 
 ### `chipbench_refmodel`
 
@@ -123,22 +118,20 @@ but GPT-5 and Claude Opus 4.5 too — while our fixed harness gets Gemini 3 Flas
 the same story a shade more mildly: the paper records 0–11% for every model, where our harness scores
 several times higher (Gemini 49.4% vs. 11.1%).
 
-That a *frontier* model scores a flat zero on an entire category — in a paper where no model of any
-strength, GPT-5 and Claude Opus included, scores above zero there — is the single hardest fact to
-explain as a capability limit. The far more likely reading, given what we found getting this task to
-run at all, is that **the paper's own harness contains a bug that blocked the category before the
-model was ever measured**: we independently found and fixed exactly such a bug in our own port (a
-missing-submodule-staging gap that guarantees a 0% regardless of model quality). This stays a
+%In the paper, the fact that even *frontier* models scores a flat zero on an entire category is used to
+explain as a capability limit. However, given what we found getting this task to
+run at all, a more likely read is that **the paper's own harness contains a bug that blocked the category before the
+model was ever measured**: we independently found and fixed exactly such a bugs in our own port. This stays a
 specific, falsifiable hypothesis rather than a confirmed finding — the paper never shipped a runnable
 reference-model harness for us to test directly — but a whole column of zeros spanning fourteen models
 from Llama 8B to GPT-5 reframes the paper's "no current model can do this" from a capability claim
 into a probable tooling artifact, exactly the kind of thing an honest re-implementation exists to
-catch. (CXXRTL was also run for the two original models; the paper publishes no CXXRTL baseline to
+catch. (CXXRTL was also run for Llama 3.1 8B and GPT 3.5-Turbo; the paper publishes no CXXRTL baseline to
 compare against.)
 
 ## Debugging the evaluation
 
-The refmodel numbers above look unremarkable until you know what they cost. On the very first runs,
+This series of debugging is an iterative effort. On the very first runs,
 most of `chipbench_refmodel` wasn't measuring the model at all — it was measuring our own scoring
 harness, which was failing before the model's answer ever got a fair test. Separating those two kinds
 of failure — a **capability failure** (the model wrote wrong code) from a **pipeline failure** (the
@@ -151,98 +144,47 @@ code and data** — a testbench generator that references a clock for combinatio
 extractor that mis-parses parametrized bit-widths, a clock-detection helper that only checks a
 module's *first* input, a golden reference Verilator rejects outright, and reference files using
 macros defined only in a separate file — each confirmed with a byte-for-byte `diff` against a mirror
-of the original ChipBench repository before being attributed to anyone. Those fire for anyone who
-runs the paper's own toolbox, not just this port. The remaining two are genuinely ours and flagged
+of the original ChipBench repository. The remaining two are genuinely ours and flagged
 just as explicitly: a submodule-staging gap in the reference-model dataset we had to *construct* (the
 paper never ships a runnable one), and a prompt/toolchain-version mismatch from pinning a specific
-Yosys build. That accounting is what lets us later suggest the paper's own flat 0% on some categories
-is likely a harness artifact and mean it responsibly — we only call a bug the paper's when a `diff`
-proves it.
+Yosys build.
 
 ### Harness failure trajectory
 
 The number we actually drove down isn't a pass rate — it's the share of every sample's failure that
-traces to the harness rather than the model. Every point still in that "pipeline" band is a sample
-that never measured the model at all, so its contribution to the pass rate is meaningless. Watching
-that share fall is how we knew a fix had genuinely worked:
+traces to the harness pipeline. It is worth noting that the pass rate will not increase untill the last pipline failure is fixed. Thus, watching
+that share of pipeline failure fall is how we knew a fix had genuinely worked:
 
 ![Line chart: refmodel CXXRTL harness-failure share per problem category across fix milestones, each line declining toward 0%, overall from 93% to near-zero](figures/pipeline_decline.png)
 
-On the original CXXRTL runs, **93% of samples were failing on the harness, not the model** — a pass
+In the pre-fix run of task 3, **93% of samples were failing on the harness instead of on the model** — a pass
 rate computed over that is very nearly pure noise. Each line above is one problem category; each
 milestone on the x-axis is a fixed bug or pair of bugs. The overall share (red) drops from 93% to
 ~31% once an outdated CXXRTL prompt and a missing submodule are staged correctly, then to ~2% after a
 rewrite of a vendored port-extraction script — by which point self-contained and CPU IP are already
 fully clean. Only non-self-contained (dashed) stays pinned near 100% far longer, because a single CPU
 problem in it was blocked by two further bugs in a row; it finally reaches 0 at the last milestone
-once both are fixed. Every bug on this trajectory affects both target languages, not just CXXRTL —
-the Python runs followed the same shape from a lower starting share (~31%). The finer-grained
+once both are fixed. Every bug on this trajectory affects both target languages (Python and CXXRTL). The finer-grained
 version — every run in order, each pipeline bucket mapped to the exact bug that causes it — lives in
-[`debug_report.html`](debug_report.html); the shape is the whole point, harness failures going from
-dominating the signal to absent.
+[`debug_report.html`](debug_report.html).
 
 ### The failure classifier
 
-We couldn't have driven that number down without being able to *measure* it, sample by sample — and
-both ChipBench scorers hand back only free-text tool output (a compiler log, a simulator dump), not
-structured error codes. So the core instrument of this project was a **failure classifier**: a script
-that reads every sample's raw error text across every run (via Inspect's own `samples_df`) and sorts
-it into buckets — pass, capability failure, pipeline failure — with each pipeline bucket tied to the
-specific bug that produces it.
+We could not have reduced the pipeline-failure rate without first measuring it sample by sample. Both ChipBench scorers return only free-text tool output—such as compiler logs and simulator traces—rather than structured error codes. The core instrument of this project was therefore a **failure classifier**: a script that reads each sample’s raw error output across evaluation runs and assigns it to one of several categories, including pass, model-capability failure, and pipeline failure, with each pipeline-failure category linked to a specific confirmed bug.
 
-Crucially, it was **bootstrapped iteratively, not designed up front.** Each sample's error text is
-matched against a growing cascade of regex signatures, each one added only after a real failure was
-read by hand and traced to a confirmed root cause. Anything matching nothing falls into an explicit
-"unclassified" bucket — and it was that leftover bucket, not the categories already believed clean,
-that kept surfacing the next bug.
+Rather than being designed in advance, the classifier was **bootstrapped iteratively**. Each error signature was added only after a real failure had been manually inspected and traced to its root cause. Samples that matched no known signature were placed in an explicit “unclassified” bucket. Repeatedly examining this residual bucket revealed additional bugs and allowed the classifier to improve alongside the evaluation pipeline.
 
 ![Schematic of the failure-classifier bootstrapping loop: raw eval logs feed into reading every sample's error text, matched against known regex signatures into pass/capability-failure/pipeline-failure buckets or an unclassified bucket, which is manually inspected to confirm a new root cause, fixed with a regression test, and added back as a new signature, closing the loop](figures/classifier_schematic.png)
 
-The loop in the diagram above is meant to run *again every time a fix lands*, and this project is the
-argument for why. Four separate times, fixing one bug didn't shrink the failure count the way it
-should have — it just exposed a second bug that had been sitting underneath the first, invisible
-because a compiler only reports its first error per file. The most recent instance was live: fixing a
-Verilator-strictness bug on one CPU problem made it finally compile, which immediately revealed a
-*second* harness bug on the same problem (a clock-detection helper that only ever checked a module's
-first input) — caught only because the "manually inspect the leftovers" step was actually re-run
-rather than the category being marked done once its known error signature disappeared. The exact
-masking relationships and before/after counts are tabulated in
-[`debug_report.html`](debug_report.html); the transferable lesson is a single sentence: **a failure
-bucket dropping to zero is the trigger to re-inspect what's left, not the signal to stop looking.**
+The loop shown above must be repeated whenever a fix is introduced. Resolving one failure can expose another that was previously hidden, particularly when the toolchain reports only the first error it encounters. We observed this pattern several times during the project: a category that appeared resolved after one bug was fixed still contained failures caused by a different underlying issue. The detailed masking relationships and before-and-after counts are reported in [`debug_report.html`](debug_report.html). The transferable lesson is simple: **when a known failure bucket disappears, the remaining failures should be inspected again rather than assumed to be genuine model failures.**
 
-How far this approach travels depends on one property of the scorer: it has to expose verbose,
-greppable failure text, and its failures have to cluster into a small number of recurring causes.
-That holds for anything scored by a compiler or a simulator. It holds much less well for an
-LLM-judged or rubric-scored eval, where a "failure" is a judgment call with no crisp error string to
-match on — there, the classification step would itself have to become model-based, quietly
-reintroducing the very "who validates the validator" problem this whole exercise was built to escape.
+The approach works best when the scorer provides detailed, searchable error output and when failures cluster around a manageable number of recurring causes, as is common with compiler- or simulator-based evaluations. It transfers less directly to LLM-judged or rubric-scored evaluations, where failures may not produce a clear diagnostic signal. In those settings, classification may itself require a model-based judgment, reintroducing the question of how the classifier—or validator—is independently validated.
 
 ## Conclusion
 
-This project ported all three ChipBench tasks — Verilog generation, debugging, and cross-language
-reference-model generation — into Inspect AI, validated that the scoring harness can't be fooled by
-a plausible-looking wrong answer, and reproduced several of the original paper's broad performance
-patterns across three models (Llama 3.1 8B, GPT-3.5 Turbo, DeepSeek R1) — close agreement on some
-categories, substantial and honestly-reported discrepancies on others, not a uniform match. Along
-the way we found and fixed **seven bugs in the evaluation harness itself**, each of which had been
-silently producing clean-looking, near-0% scores that had nothing to do with model capability;
-fixing them dropped the harness's own pipeline-failure share from 43–93% down to ~2% on the
-affected categories and measurably raised pass rates for every model re-tested against the fixed
-pipeline. The seventh turned up while reconfirming the sixth fix (see the `chipbench_refmodel`
-results above) — a live demonstration of this document's own thesis, confirmed present in the
-paper's own unmodified code and fixed the same day. One genuinely broken dataset record (a
-self-contradictory `chipbench_refmodel`
-prompt) was also identified and excluded. The implementation is tested, reproduced against
-two-to-three models per task, and submitted to the [Inspect Evals
-Register](https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/EVAL_REGISTER.md).
+We ported all three ChipBench tasks—Verilog generation, debugging, and cross-language reference-model generation—to the Inspect Evals framework and validated the resulting compilation and simulation pipelines. Across Llama 3.1 8B, GPT-3.5 Turbo, Gemini 3 Flash, and, for Verilog generation, DeepSeek R1, the implementation reproduces several broad patterns reported in the original paper while also revealing substantial category-level discrepancies. The most important discrepancy arose in `chipbench_refmodel`, where we identified and fixed seven evaluation-harness bugs. On affected categories, these fixes reduced the share of failures caused by the pipeline from 43–93% to approximately 2% and substantially increased measured pass rates. Five of the bugs were traced to the original benchmark’s shipped code or data, while two arose in our reimplementation.
 
-The next step is to test whether the same failure-classification workflow improves other
-tool-grounded evaluations, beginning with physical-design benchmarks — ChipBench's RTL-level focus
-(specification → Verilog → reference model) is only the first stage of the hardware design
-pipeline, and further stages (place-and-route, physical verification) lean on EDA tool loops with
-their own harness-failure surface to get wrong. The broader goal is not merely to make benchmarks
-run, but to establish that their failures genuinely measure the model rather than the surrounding
-infrastructure.
+The broader lesson is that running an evaluation successfully is not the same as validating it. In tool-grounded benchmarks, a clean zero score can reflect model incapability, but it can also reflect infrastructure that prevents valid outputs from ever being scored correctly. Distinguishing these cases requires sample-level failure attribution, repeated inspection of unexplained failures, and regression testing after every fix—especially because resolving one bug may expose another hidden beneath it. We next plan to apply this failure-classification workflow to later stages of hardware design, where increasingly complex EDA toolchains create an even larger surface for evaluation failures. 
 
 **Related benchmarks:** [PDAgent-Bench](https://arxiv.org/html/2606.17253v1) (LLM/VLM agents
 against real EDA tool loops for physical design) and [HardSecBench](https://arxiv.org/pdf/2601.13864)
@@ -342,3 +284,4 @@ those 6 problems — see the Debug section; Gemini's full run postdates the fixe
 CXXRTL was also run for both original models (Llama 4.5(2.07)/11.0(4.11)/14.3(4.85)%, GPT-3.5
 6.8(2.87)/14.2(4.83)/18.2(5.88)% for pass@1/5/10); the paper publishes no CXXRTL baseline to compare
 against.
+
